@@ -5,6 +5,7 @@ from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.progressbar import ProgressBar
+from kivy.uix.image import Image
 from kivy.clock import Clock
 from kivy.properties import NumericProperty
 from kivvyhide.utils.stegano_wrapper import hide_message, reveal_message
@@ -56,6 +57,17 @@ class SteganoApp(App):
         # Main layout
         layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
         
+        # Input Image Preview
+        self.input_image = Image(
+            source='',
+            size_hint_y=None,
+            height=200,
+            allow_stretch=True,
+            keep_ratio=True
+        )
+        self.input_image.opacity = 0
+        layout.add_widget(self.input_image)
+        
         # Progress Bar
         self.progress_bar = ProgressBar(max=100, value=0, size_hint_y=None, height=30)
         self.progress_bar.opacity = 0
@@ -66,7 +78,7 @@ class SteganoApp(App):
         layout.add_widget(self.carrier_label)
         
         carrier_btn = Button(
-            text='Select Carrier Image',
+            text='Select Image',
             size_hint_y=None,
             height=50
         )
@@ -127,6 +139,17 @@ class SteganoApp(App):
         button_layout.add_widget(reveal_btn)
         layout.add_widget(button_layout)
         
+        # Output Image Preview
+        self.output_image = Image(
+            source='',
+            size_hint_y=None,
+            height=200,
+            allow_stretch=True,
+            keep_ratio=True
+        )
+        self.output_image.opacity = 0
+        layout.add_widget(self.output_image)
+        
         return layout
     
     def on_mode_change(self, instance, value):
@@ -153,15 +176,15 @@ class SteganoApp(App):
     
     def choose_carrier(self, instance):
         try:
-            filters = [["*.png", "*.jpg", "*.jpeg"]]
+            # Show all image files with case-insensitive extensions
+            filters = [["*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG"]]
             filechooser.open_file(
-                on_selection=self.handle_carrier_selection,
+                on_selection=lambda x: self.handle_carrier_selection(x) if x else None,
                 filters=filters,
-                title="Select Carrier Image",
+                title="Select Image",
                 multiple=False
             )
         except NotImplementedError:
-            # Fallback for platforms where filechooser is not implemented
             self.message_input.text = "File chooser not supported on this platform"
         except Exception as e:
             self.message_input.text = f"Error opening file chooser: {str(e)}"
@@ -183,6 +206,10 @@ class SteganoApp(App):
         if selection:
             self.carrier_file = selection[0]
             self.carrier_label.text = f"Carrier: {os.path.basename(self.carrier_file)}"
+            self.input_image.source = self.carrier_file
+            self.input_image.opacity = 1
+            self.output_image.opacity = 0
+            self.output_image.source = ''
     
     def handle_payload_selection(self, selection):
         if selection:
@@ -223,8 +250,10 @@ class SteganoApp(App):
             try:
                 if self.text_mode.state == 'down':
                     message = self.message_input.text
-                    hide_message(self.carrier_file, message)
-                    Clock.schedule_once(lambda dt, msg="Message hidden successfully!": self.set_success_message(msg))
+                    output_path = hide_message(self.carrier_file, message)
+                    if output_path and os.path.exists(output_path):
+                        Clock.schedule_once(lambda dt: self.show_output_image(output_path))
+                        Clock.schedule_once(lambda dt: self.set_success_message("Message hidden successfully!"))
                 else:
                     with open(self.payload_file, 'rb') as f:
                         file_content = f.read()
@@ -232,11 +261,13 @@ class SteganoApp(App):
                     filename = os.path.basename(self.payload_file)
                     file_data = f"FILE:{filename}:{base64.b64encode(file_content).decode()}"
                     
-                    hide_message(self.carrier_file, file_data)
-                    Clock.schedule_once(lambda dt, msg="File hidden successfully!": self.set_success_message(msg))
+                    output_path = hide_message(self.carrier_file, file_data)
+                    if output_path and os.path.exists(output_path):
+                        Clock.schedule_once(lambda dt: self.show_output_image(output_path))
+                        Clock.schedule_once(lambda dt: self.set_success_message("File hidden successfully!"))
                     
             except Exception as error:
-                Clock.schedule_once(lambda dt, err=str(error): self.set_error_message(err))
+                Clock.schedule_once(lambda dt: self.set_error_message(str(error)))
             finally:
                 Clock.schedule_once(lambda dt: self.complete_progress(), 1)
         
@@ -291,3 +322,10 @@ class SteganoApp(App):
     def complete_progress(self):
         Clock.unschedule(self.update_progress)
         Clock.schedule_once(lambda dt: self.reset_progress(), 1)
+
+    def show_output_image(self, path):
+        if path and os.path.exists(path):
+            self.output_image.source = path
+            self.output_image.opacity = 1
+        else:
+            self.output_image.opacity = 0
