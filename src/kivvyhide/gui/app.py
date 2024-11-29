@@ -4,20 +4,38 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.togglebutton import ToggleButton
+from kivy.uix.progressbar import ProgressBar
+from kivy.clock import Clock
+from kivy.properties import NumericProperty
 from kivvyhide.utils.stegano_wrapper import hide_message, reveal_message
 from plyer import filechooser
 import base64
 import os
+import threading
+
+class HighlightButton(Button):
+    def on_press(self):
+        self.background_color = [0.8, 0.8, 0.8, 1]
+    
+    def on_release(self):
+        self.background_color = [1, 1, 1, 1]
 
 class SteganoApp(App):
+    progress = NumericProperty(0)
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.carrier_file = None  # Image file to hide data in
-        self.payload_file = None  # File to be hidden
+        self.carrier_file = None
+        self.payload_file = None
         
     def build(self):
         # Main layout
         layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        
+        # Progress Bar
+        self.progress_bar = ProgressBar(max=100, value=0, size_hint_y=None, height=30)
+        self.progress_bar.opacity = 0
+        layout.add_widget(self.progress_bar)
         
         # Carrier file selection (image file)
         self.carrier_label = Label(text='No carrier image selected')
@@ -76,9 +94,9 @@ class SteganoApp(App):
         
         # Action Buttons
         button_layout = BoxLayout(size_hint_y=None, height=50)
-        hide_btn = Button(text='Hide')
+        hide_btn = HighlightButton(text='Hide')
         hide_btn.bind(on_press=self.hide_data)
-        reveal_btn = Button(text='Reveal')
+        reveal_btn = HighlightButton(text='Reveal')
         reveal_btn.bind(on_press=self.reveal_data)
         
         button_layout.add_widget(hide_btn)
@@ -136,56 +154,105 @@ class SteganoApp(App):
             self.payload_file = selection[0]
             self.payload_label.text = f"Payload: {os.path.basename(self.payload_file)}"
     
+    def update_progress(self, dt):
+        if self.progress < 90:
+            self.progress += 10
+        self.progress_bar.value = self.progress
+
+    def reset_progress(self):
+        self.progress = 0
+        self.progress_bar.value = 0
+        self.progress_bar.opacity = 0
+
+    def start_progress(self):
+        self.progress = 0
+        self.progress_bar.opacity = 1
+        Clock.schedule_interval(self.update_progress, 0.1)
+
     def hide_data(self, instance):
         if not self.carrier_file:
-            self.message_input.text = "Please select a carrier image first"
+            self.set_error_message("Please select a carrier image first")
             return
         
-        try:
-            if self.text_mode.state == 'down':
-                # Text mode
-                message = self.message_input.text
-                hide_message(self.carrier_file, message)
-                self.message_input.text = "Message hidden successfully!"
-            else:
-                # File mode
-                if not self.payload_file:
-                    self.message_input.text = "Please select a file to hide"
-                    return
+        if self.text_mode.state == 'down' and not self.message_input.text.strip():
+            self.set_error_message("Please enter a message to hide")
+            return
+        
+        if self.file_mode.state == 'down' and not self.payload_file:
+            self.set_error_message("Please select a file to hide")
+            return
+        
+        self.start_progress()
+        
+        def process():
+            try:
+                if self.text_mode.state == 'down':
+                    message = self.message_input.text
+                    hide_message(self.carrier_file, message)
+                    Clock.schedule_once(lambda dt, msg="Message hidden successfully!": self.set_success_message(msg))
+                else:
+                    with open(self.payload_file, 'rb') as f:
+                        file_content = f.read()
                     
-                with open(self.payload_file, 'rb') as f:
-                    file_content = f.read()
+                    filename = os.path.basename(self.payload_file)
+                    file_data = f"FILE:{filename}:{base64.b64encode(file_content).decode()}"
                     
-                # Create a header with filename and content
-                filename = os.path.basename(self.payload_file)
-                file_data = f"FILE:{filename}:{base64.b64encode(file_content).decode()}"
-                
-                hide_message(self.carrier_file, file_data)
-                self.message_input.text = "File hidden successfully!"
-                
-        except Exception as e:
-            self.message_input.text = f"Error: {str(e)}"
-    
+                    hide_message(self.carrier_file, file_data)
+                    Clock.schedule_once(lambda dt, msg="File hidden successfully!": self.set_success_message(msg))
+                    
+            except Exception as error:
+                Clock.schedule_once(lambda dt, err=str(error): self.set_error_message(err))
+            finally:
+                Clock.schedule_once(lambda dt: self.complete_progress(), 1)
+        
+        threading.Thread(target=process).start()
+
     def reveal_data(self, instance):
         if not self.carrier_file:
-            self.message_input.text = "Please select a carrier image first"
+            self.set_error_message("Please select a carrier image first")
             return
         
-        try:
-            revealed_data = reveal_message(self.carrier_file)
-            
-            if revealed_data.startswith("FILE:"):
-                # Handle file data
-                _, filename, content = revealed_data.split(":", 2)
-                save_path = os.path.join(os.path.dirname(self.carrier_file), f"revealed_{filename}")
+        self.start_progress()
+        
+        def process():
+            try:
+                revealed_data = reveal_message(self.carrier_file)
                 
-                with open(save_path, 'wb') as f:
-                    f.write(base64.b64decode(content))
-                
-                self.message_input.text = f"File revealed and saved as: {save_path}"
-            else:
-                # Handle text data
-                self.message_input.text = f"Revealed message: {revealed_data}"
-                
-        except Exception as e:
-            self.message_input.text = f"Error: {str(e)}"
+                if not revealed_data:
+                    Clock.schedule_once(lambda dt: self.set_error_message("No hidden data found in image"))
+                    return
+                    
+                if revealed_data.startswith("FILE:"):
+                    try:
+                        _, filename, content = revealed_data.split(":", 2)
+                        save_path = os.path.join(os.path.dirname(self.carrier_file), f"revealed_{filename}")
+                        
+                        with open(save_path, 'wb') as f:
+                            f.write(base64.b64decode(content))
+                        
+                        Clock.schedule_once(lambda dt, msg=f"File revealed and saved as: {save_path}": self.set_success_message(msg))
+                    except Exception as error:
+                        Clock.schedule_once(lambda dt, err=f"Error extracting file: {str(error)}": self.set_error_message(err))
+                else:
+                    Clock.schedule_once(lambda dt, msg=f"Revealed message: {revealed_data}": self.set_success_message(msg))
+                    
+            except Exception as error:
+                Clock.schedule_once(lambda dt, err=str(error): self.set_error_message(err))
+            finally:
+                Clock.schedule_once(lambda dt: self.complete_progress(), 1)
+        
+        threading.Thread(target=process).start()
+
+    def set_success_message(self, message):
+        self.message_input.text = message
+        self.progress = 100
+        self.progress_bar.value = 100
+
+    def set_error_message(self, error):
+        self.message_input.text = f"Error: {error}"
+        self.progress = 100
+        self.progress_bar.value = 100
+
+    def complete_progress(self):
+        Clock.unschedule(self.update_progress)
+        Clock.schedule_once(lambda dt: self.reset_progress(), 1)
