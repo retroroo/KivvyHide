@@ -12,6 +12,21 @@ from plyer import filechooser
 import base64
 import os
 import threading
+from kivy.utils import platform
+
+# Platform-specific imports
+ANDROID_PERMISSIONS = []
+if platform == 'android':
+    try:
+        from android.permissions import request_permissions, Permission
+        # Define permissions only if we successfully imported android modules
+        ANDROID_PERMISSIONS = [
+            'android.permission.READ_EXTERNAL_STORAGE',
+            'android.permission.WRITE_EXTERNAL_STORAGE'
+        ]
+    except ImportError:
+        # Android modules not available, skip permissions
+        pass
 
 class HighlightButton(Button):
     def on_press(self):
@@ -27,7 +42,16 @@ class SteganoApp(App):
         super().__init__(**kwargs)
         self.carrier_file = None
         self.payload_file = None
+        if platform == 'android' and ANDROID_PERMISSIONS:
+            self.request_android_permissions()
         
+    def request_android_permissions(self):
+        if platform == 'android' and ANDROID_PERMISSIONS:
+            try:
+                request_permissions(ANDROID_PERMISSIONS)
+            except Exception as e:
+                print(f"Error requesting permissions: {e}")
+    
     def build(self):
         # Main layout
         layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
@@ -129,10 +153,16 @@ class SteganoApp(App):
     
     def choose_carrier(self, instance):
         try:
+            filters = [["*.png", "*.jpg", "*.jpeg"]]
             filechooser.open_file(
                 on_selection=self.handle_carrier_selection,
-                filters=[('Image Files', '*.png', '*.jpg', '*.jpeg')]
+                filters=filters,
+                title="Select Carrier Image",
+                multiple=False
             )
+        except NotImplementedError:
+            # Fallback for platforms where filechooser is not implemented
+            self.message_input.text = "File chooser not supported on this platform"
         except Exception as e:
             self.message_input.text = f"Error opening file chooser: {str(e)}"
     
@@ -140,7 +170,12 @@ class SteganoApp(App):
         try:
             filechooser.open_file(
                 on_selection=self.handle_payload_selection,
+                title="Select File to Hide",
+                multiple=False
             )
+        except NotImplementedError:
+            # Fallback for platforms where filechooser is not implemented
+            self.message_input.text = "File chooser not supported on this platform"
         except Exception as e:
             self.message_input.text = f"Error opening file chooser: {str(e)}"
     
