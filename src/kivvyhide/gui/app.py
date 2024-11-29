@@ -252,7 +252,7 @@ class SteganoApp(App):
                     message = self.message_input.text
                     output_path = hide_message(self.carrier_file, message)
                     if output_path and os.path.exists(output_path):
-                        Clock.schedule_once(lambda dt: self.show_output_image(output_path))
+                        Clock.schedule_once(lambda dt, path=output_path: self.show_output_image(path))
                         Clock.schedule_once(lambda dt: self.set_success_message("Message hidden successfully!"))
                 else:
                     with open(self.payload_file, 'rb') as f:
@@ -263,11 +263,11 @@ class SteganoApp(App):
                     
                     output_path = hide_message(self.carrier_file, file_data)
                     if output_path and os.path.exists(output_path):
-                        Clock.schedule_once(lambda dt: self.show_output_image(output_path))
+                        Clock.schedule_once(lambda dt, path=output_path: self.show_output_image(path))
                         Clock.schedule_once(lambda dt: self.set_success_message("File hidden successfully!"))
                     
-            except Exception as error:
-                Clock.schedule_once(lambda dt: self.set_error_message(str(error)))
+            except Exception as e:
+                Clock.schedule_once(lambda dt, err=str(e): self.set_error_message(err))
             finally:
                 Clock.schedule_once(lambda dt: self.complete_progress(), 1)
         
@@ -291,7 +291,8 @@ class SteganoApp(App):
                 if revealed_data.startswith("FILE:"):
                     try:
                         _, filename, content = revealed_data.split(":", 2)
-                        save_path = os.path.join(os.path.dirname(self.carrier_file), f"revealed_{filename}")
+                        base_save_path = os.path.join(os.path.dirname(self.carrier_file), f"revealed_{filename}")
+                        save_path = self.get_unique_filename(base_save_path)
                         
                         with open(save_path, 'wb') as f:
                             f.write(base64.b64decode(content))
@@ -329,3 +330,20 @@ class SteganoApp(App):
             self.output_image.opacity = 1
         else:
             self.output_image.opacity = 0
+
+    def get_unique_filename(self, base_path):
+        """Generate a unique filename by appending a number if file exists"""
+        if not os.path.exists(base_path):
+            return base_path
+        
+        directory = os.path.dirname(base_path)
+        filename = os.path.basename(base_path)
+        name, ext = os.path.splitext(filename)
+        
+        counter = 1
+        while os.path.exists(base_path):
+            new_name = f"{name}_{counter}{ext}"
+            base_path = os.path.join(directory, new_name)
+            counter += 1
+        
+        return base_path
