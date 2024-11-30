@@ -108,6 +108,11 @@ class SteganoApp(MDApp):
             multiline=False,
             size_hint_x=0.7
         )
+        self.seven_zip_filename_input = TextInput(
+            multiline=False,
+            size_hint_x=0.7,
+            hint_text='Leave empty for encrypted.7z'
+        )
         
         if platform == 'android' and ANDROID_PERMISSIONS:
             self.request_android_permissions()
@@ -369,9 +374,11 @@ class SteganoApp(MDApp):
                             Clock.schedule_once(lambda dt: self.set_error_message("7z password is required"))
                             return
                         
-                        # Create temporary 7z file
+                        # Create temporary 7z file with encrypted headers
                         with tempfile.NamedTemporaryFile(suffix='.7z', delete=False) as temp_7z:
-                            with py7zr.SevenZipFile(temp_7z.name, 'w', password=self.seven_zip_password_input.text) as archive:
+                            with py7zr.SevenZipFile(temp_7z.name, 'w', 
+                                                  password=self.seven_zip_password_input.text,
+                                                  header_encryption=True) as archive:
                                 archive.write(self.payload_file, os.path.basename(self.payload_file))
                         
                         # Read the 7z file
@@ -381,7 +388,12 @@ class SteganoApp(MDApp):
                         # Clean up temp file
                         os.unlink(temp_7z.name)
                         
-                        filename = os.path.basename(self.payload_file) + '.7z'
+                        if self.seven_zip_filename_input.text.strip():
+                            filename = self.seven_zip_filename_input.text.strip()
+                            if not filename.lower().endswith('.7z'):
+                                filename += '.7z'
+                        else:
+                            filename = "encrypted.7z"
                     else:
                         with open(self.payload_file, 'rb') as f:
                             file_content = f.read()
@@ -393,14 +405,12 @@ class SteganoApp(MDApp):
                     if output_path and os.path.exists(output_path):
                         Clock.schedule_once(lambda dt, path=output_path: self.show_output_image(path))
                         Clock.schedule_once(lambda dt: self.set_success_message("File hidden successfully!"))
-                        # Reset file selection
                         Clock.schedule_once(lambda dt: self.reset_file_selection())
                     
             except Exception as e:
                 Clock.schedule_once(lambda dt, err=str(e): self.set_error_message(err))
             finally:
-                Clock.schedule_once(lambda dt: self.complete_progress(), 1)
-                # Re-enable buttons
+                Clock.schedule_once(lambda dt: self.complete_progress())
                 Clock.schedule_once(lambda dt: self.enable_buttons(instance))
         
         threading.Thread(target=process).start()
@@ -435,29 +445,29 @@ class SteganoApp(MDApp):
         threading.Thread(target=process, daemon=True).start()
 
     def update_revealed_data(self, data):
-        try:
-            if self.text_mode.state == 'down':
-                self.message_input.text = data
-            else:
-                # Check if the data starts with FILE: prefix
-                if data.startswith('FILE:'):
+        if self.text_mode.state == 'down':
+            self.message_input.text = data
+        else:
+            # Check if the data starts with FILE: prefix
+            if data.startswith('FILE:'):
+                try:
                     # Split the data into filename and content
                     _, filename, encoded_content = data.split(':', 2)
                     file_content = base64.b64decode(encoded_content)
                     
-                    # Generate unique filename
+                    # Generate unique filename in the same directory as carrier
                     base_path = os.path.join(os.path.dirname(self.carrier_file), filename)
                     output_path = self.get_unique_filename(base_path)
                     
-                    # Write the file
+                    # Write the file directly, whether it's 7z or not
                     with open(output_path, 'wb') as f:
                         f.write(file_content)
                     
                     self.message_input.text = f"File extracted successfully: {os.path.basename(output_path)}"
-                else:
-                    self.message_input.text = "No valid file data found in image"
-        except Exception as e:
-            self.message_input.text = f"Error extracting file: {str(e)}"
+                except Exception as e:
+                    self.message_input.text = f"Error extracting file: {str(e)}"
+            else:
+                self.message_input.text = "No valid file data found in image"
 
     def set_success_message(self, message):
         self.message_input.text = message
@@ -542,13 +552,19 @@ class SteganoApp(MDApp):
         if value == 'AES256':
             self.seven_zip_password_layout.height = 40
             self.seven_zip_password_layout.opacity = 1
-            self.seven_zip_password_input.disabled = False  # Enable input when AES256 is selected
-            self.settings_popup.height = self.settings_popup.height + 40
+            self.seven_zip_password_input.disabled = False
+            self.seven_zip_filename_layout.height = 40
+            self.seven_zip_filename_layout.opacity = 1
+            self.seven_zip_filename_input.disabled = False
+            self.settings_popup.height = self.settings_popup.height + 80
         else:
             self.seven_zip_password_layout.height = 0
             self.seven_zip_password_layout.opacity = 0
-            self.seven_zip_password_input.disabled = True  # Disable input when not using AES256
-            self.settings_popup.height = self.settings_popup.height - 40
+            self.seven_zip_password_input.disabled = True
+            self.seven_zip_filename_layout.height = 0
+            self.seven_zip_filename_layout.opacity = 0
+            self.seven_zip_filename_input.disabled = True
+            self.settings_popup.height = self.settings_popup.height - 80
 
     def create_settings_popup(self):
         # Create popup content
@@ -647,6 +663,17 @@ class SteganoApp(MDApp):
         )
         self.seven_zip_password_layout.add_widget(self.seven_zip_password_input)
         self.settings_panel.add_widget(self.seven_zip_password_layout)
+
+        # Add 7z filename input right after the password input
+        self.seven_zip_filename_layout = BoxLayout(size_hint_y=None, height=0, opacity=0)
+        self.seven_zip_filename_layout.add_widget(Label(text='7z Filename:'))
+        self.seven_zip_filename_input = TextInput(
+            multiline=False,
+            size_hint_x=0.7,
+            hint_text='Leave empty for encrypted.7z'
+        )
+        self.seven_zip_filename_layout.add_widget(self.seven_zip_filename_input)
+        self.settings_panel.add_widget(self.seven_zip_filename_layout)
 
         # Add custom filename input
         filename_layout = BoxLayout(size_hint_y=None, height=40)
