@@ -37,6 +37,8 @@ import magic
 import exifread
 from typing import Dict, Any
 from kivvyhide.utils.image_analyzer import ImageAnalyzer
+from kivy.graphics import Color, Line
+from kivy.uix.widget import Widget
 
 # Platform-specific imports
 ANDROID_PERMISSIONS = []
@@ -725,23 +727,22 @@ class SteganoApp(App):
         threading.Thread(target=analyze_process, daemon=True).start()
 
     def show_analysis_results(self, results):
-        content = BoxLayout(orientation='vertical', padding=10, spacing=5)
+        content = BoxLayout(orientation='vertical', padding=10, spacing=10)
         scroll = ScrollView(size_hint=(1, 0.9))
         info_layout = BoxLayout(
             orientation='vertical',
-            spacing=5,
+            spacing=15,
             size_hint_y=None
         )
         info_layout.bind(minimum_height=info_layout.setter('height'))
         
         sections = [
-            ('File Information', [
+            ('Basic Information', [
                 f"Filename: {results['filename']}",
                 f"Format: {results['basic_info']['format']}",
                 f"Size: {results['basic_info']['size'][0]}x{results['basic_info']['size'][1]}",
                 f"Mode: {results['basic_info']['mode']}",
-                f"File Size: {results['basic_info']['file_size']}",
-                f"Bits per Channel: {results['basic_info']['bits_per_channel']}"
+                f"File Size: {results['basic_info']['file_size']}"
             ]),
             ('Steganography Analysis', [
                 f"Hidden Data Detected: {'Yes' if results['steganography']['has_hidden_data'] else 'No'}",
@@ -759,11 +760,40 @@ class SteganoApp(App):
                 f"Level: {results['compression']['compression_level']}",
                 *results['compression']['details']
             ]),
-            ('File Type Details', [results['file_type']]),
-            ('Metadata', [f"{k}: {v}" for k, v in results['metadata'].items()])
+            ('File Type Details', [
+                results['file_type']
+            ]),
+            ('Metadata', [
+                f"{k}: {v}" for k, v in results['metadata'].items()
+            ])
         ]
         
         for section_title, items in sections:
+            # Create section container
+            section_box = BoxLayout(
+                orientation='vertical',
+                size_hint_y=None,
+                padding=10,
+                spacing=5
+            )
+            section_box.bind(minimum_height=section_box.setter('height'))
+            
+            # Create a unique update function for each section box
+            def create_update_rect(box):
+                def update_rect(instance, value):
+                    box.rect.rectangle = (instance.x, instance.y, instance.width, instance.height)
+                return update_rect
+            
+            # Add outline
+            with section_box.canvas.before:
+                Color(0.5, 0.5, 0.5, 1)  # Gray outline
+                section_box.rect = Line(rectangle=(section_box.x, section_box.y, section_box.width, section_box.height), width=1.5)
+            
+            # Bind the update function specific to this section box
+            update_rect = create_update_rect(section_box)
+            section_box.bind(pos=update_rect, size=update_rect)
+            
+            # Add section title
             section_label = Label(
                 text=f"[b]{section_title}[/b]",
                 markup=True,
@@ -771,8 +801,9 @@ class SteganoApp(App):
                 height=30,
                 halign='left'
             )
-            info_layout.add_widget(section_label)
+            section_box.add_widget(section_label)
             
+            # Add items
             for item in items:
                 item_label = Label(
                     text=item,
@@ -781,7 +812,11 @@ class SteganoApp(App):
                     text_size=(None, 25),
                     halign='left'
                 )
-                info_layout.add_widget(item_label)
+                section_box.add_widget(item_label)
+            
+            # Add section to main layout with spacing
+            info_layout.add_widget(section_box)
+            info_layout.add_widget(Widget(size_hint_y=None, height=10))
         
         scroll.add_widget(info_layout)
         content.add_widget(scroll)
