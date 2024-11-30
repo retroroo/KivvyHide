@@ -14,7 +14,7 @@ requirements = python3,kivy==2.3.0,\
     exifread==3.0.0,\
     scipy==1.14.1,\
     py7zr==0.22.0,\
-    kivymd==2.0.0
+    kivymd==1.2.0
 
 android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,INTERNET
 android.api = 33
