@@ -69,6 +69,7 @@ class SteganoApp(MDApp):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.title = "StegKivy"
         self.carrier_file = None
         self.payload_file = None
         
