@@ -14,6 +14,12 @@ import base64
 import os
 import threading
 from kivy.utils import platform
+from kivy.uix.slider import Slider
+from kivvyhide.utils.settings import SteganoSettings
+from cryptography.fernet import Fernet
+import zlib
+from kivy.uix.spinner import Spinner
+from kivy.uix.scrollview import ScrollView
 
 # Platform-specific imports
 ANDROID_PERMISSIONS = []
@@ -54,103 +60,142 @@ class SteganoApp(App):
                 print(f"Error requesting permissions: {e}")
     
     def build(self):
-        # Main layout
-        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        # Create a main layout that will contain everything
+        root_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        
+        # Create a scrollable content layout for the main interface
+        content_layout = BoxLayout(orientation='vertical', spacing=10, size_hint_y=None)
+        content_layout.bind(minimum_height=content_layout.setter('height'))
+        
+        # Image preview layout (side by side)
+        image_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=200, spacing=10)
         
         # Input Image Preview
         self.input_image = Image(
             source='',
-            size_hint_y=None,
-            height=200,
-            allow_stretch=True,
-            keep_ratio=True
+            size_hint=(1, 1),
+            fit_mode='contain'
         )
         self.input_image.opacity = 0
-        layout.add_widget(self.input_image)
-        
-        # Progress Bar
-        self.progress_bar = ProgressBar(max=100, value=0, size_hint_y=None, height=30)
-        self.progress_bar.opacity = 0
-        layout.add_widget(self.progress_bar)
-        
-        # Carrier file selection (image file)
-        self.carrier_label = Label(text='No carrier image selected')
-        layout.add_widget(self.carrier_label)
-        
-        carrier_btn = Button(
-            text='Select Image',
-            size_hint_y=None,
-            height=50
-        )
-        carrier_btn.bind(on_press=self.choose_carrier)
-        layout.add_widget(carrier_btn)
-        
-        # Toggle between text and file mode
-        mode_layout = BoxLayout(size_hint_y=None, height=50)
-        self.text_mode = ToggleButton(text='Text Mode', state='down', group='mode')
-        self.file_mode = ToggleButton(text='File Mode', group='mode')
-        mode_layout.add_widget(self.text_mode)
-        mode_layout.add_widget(self.file_mode)
-        layout.add_widget(mode_layout)
-        
-        # Text input for message
-        self.message_input = TextInput(
-            multiline=True,
-            hint_text='Enter message to hide/reveal',
-            size_hint_y=None,
-            height=100
-        )
-        self.message_label = Label(text='Message:')
-        layout.add_widget(self.message_label)
-        layout.add_widget(self.message_input)
-        
-        # File selection for payload
-        self.payload_label = Label(text='No payload file selected')
-        self.payload_btn = Button(
-            text='Select File to Hide',
-            size_hint_y=None,
-            height=50
-        )
-        self.payload_btn.bind(on_press=self.choose_payload)
-        
-        # Initially hide file selection widgets
-        self.payload_label.opacity = 0
-        self.payload_btn.opacity = 0
-        self.payload_label.size_hint_y = None
-        self.payload_btn.size_hint_y = None
-        self.payload_label.height = 0
-        self.payload_btn.height = 0
-        
-        layout.add_widget(self.payload_label)
-        layout.add_widget(self.payload_btn)
-        
-        # Bind mode toggles
-        self.text_mode.bind(state=self.on_mode_change)
-        self.file_mode.bind(state=self.on_mode_change)
-        
-        # Action Buttons
-        button_layout = BoxLayout(size_hint_y=None, height=50)
-        hide_btn = HighlightButton(text='Hide')
-        hide_btn.bind(on_press=self.hide_data)
-        reveal_btn = HighlightButton(text='Reveal')
-        reveal_btn.bind(on_press=self.reveal_data)
-        
-        button_layout.add_widget(hide_btn)
-        button_layout.add_widget(reveal_btn)
-        layout.add_widget(button_layout)
         
         # Output Image Preview
         self.output_image = Image(
             source='',
-            size_hint_y=None,
-            height=200,
-            allow_stretch=True,
-            keep_ratio=True
+            size_hint=(1, 1),
+            fit_mode='contain'
         )
         self.output_image.opacity = 0
-        layout.add_widget(self.output_image)
         
-        return layout
+        image_layout.add_widget(self.input_image)
+        image_layout.add_widget(self.output_image)
+        content_layout.add_widget(image_layout)
+        
+        # Mode selection
+        mode_layout = BoxLayout(size_hint_y=None, height=50)
+        self.text_mode = ToggleButton(text='Text Mode', state='down', group='mode')
+        self.file_mode = ToggleButton(text='File Mode', group='mode')
+        self.text_mode.bind(state=self.toggle_mode)
+        self.file_mode.bind(state=self.toggle_mode)
+        mode_layout.add_widget(self.text_mode)
+        mode_layout.add_widget(self.file_mode)
+        content_layout.add_widget(mode_layout)
+        
+        # Carrier image selection
+        carrier_layout = BoxLayout(size_hint_y=None, height=50)
+        self.carrier_label = Label(text='Carrier Image:')
+        carrier_layout.add_widget(self.carrier_label)
+        self.carrier_btn = HighlightButton(text='Choose Image', size_hint_x=0.7)
+        self.carrier_btn.bind(on_release=self.choose_carrier)
+        carrier_layout.add_widget(self.carrier_btn)
+        content_layout.add_widget(carrier_layout)
+        
+        # Message input
+        self.message_label = Label(text='Message:', size_hint_y=None, height=50)
+        content_layout.add_widget(self.message_label)
+        self.message_input = TextInput(multiline=True, size_hint_y=None, height=100)
+        content_layout.add_widget(self.message_input)
+        
+        # File payload selection
+        self.payload_label = Label(text='File to Hide:', size_hint_y=None, height=0, opacity=0)
+        content_layout.add_widget(self.payload_label)
+        self.payload_btn = HighlightButton(text='Choose File', size_hint_y=None, height=0, opacity=0)
+        self.payload_btn.bind(on_release=self.choose_payload)
+        content_layout.add_widget(self.payload_btn)
+        
+        # Progress bar
+        self.progress_bar = ProgressBar(max=100, size_hint_y=None, height=20)
+        content_layout.add_widget(self.progress_bar)
+        
+        # Add the advanced settings at the bottom
+        settings_expander = BoxLayout(orientation='vertical', size_hint_y=None, height=50)
+        self.settings_toggle = ToggleButton(
+            text='Advanced Settings',
+            size_hint_y=None,
+            height=50
+        )
+        self.settings_toggle.bind(state=self.toggle_settings)
+        settings_expander.add_widget(self.settings_toggle)
+        
+        # Settings panel with dropdowns
+        self.settings_panel = BoxLayout(
+            orientation='vertical', 
+            size_hint_y=None, 
+            height=0,
+            opacity=0
+        )
+        
+        # Encoding dropdown
+        encoding_layout = BoxLayout(size_hint_y=None, height=40)
+        encoding_layout.add_widget(Label(text='Encoding:'))
+        self.encoding_spinner = Spinner(
+            text='utf-8',
+            values=('utf-8', 'ascii', 'latin1'),
+            size_hint_x=0.7
+        )
+        encoding_layout.add_widget(self.encoding_spinner)
+        self.settings_panel.add_widget(encoding_layout)
+        
+        # Compression toggle
+        compression_layout = BoxLayout(size_hint_y=None, height=40)
+        compression_layout.add_widget(Label(text='Compression:'))
+        self.compression_spinner = Spinner(
+            text='Enabled',
+            values=('Enabled', 'Disabled'),
+            size_hint_x=0.7
+        )
+        compression_layout.add_widget(self.compression_spinner)
+        self.settings_panel.add_widget(compression_layout)
+        
+        # Encryption key
+        encryption_layout = BoxLayout(size_hint_y=None, height=40)
+        encryption_layout.add_widget(Label(text='Encryption Key:'))
+        self.encryption_input = TextInput(
+            multiline=False,
+            size_hint_x=0.7,
+            password=True
+        )
+        encryption_layout.add_widget(self.encryption_input)
+        self.settings_panel.add_widget(encryption_layout)
+        
+        settings_expander.add_widget(self.settings_panel)
+        content_layout.add_widget(settings_expander)
+        
+        # Create a ScrollView to contain the content
+        scroll_view = ScrollView(size_hint=(1, 1))
+        scroll_view.add_widget(content_layout)
+        root_layout.add_widget(scroll_view)
+        
+        # Action buttons
+        button_layout = BoxLayout(size_hint_y=None, height=50, spacing=10)
+        hide_btn = HighlightButton(text='Hide Data')
+        hide_btn.bind(on_release=self.hide_data)
+        reveal_btn = HighlightButton(text='Reveal Data')
+        reveal_btn.bind(on_release=self.reveal_data)
+        button_layout.add_widget(hide_btn)
+        button_layout.add_widget(reveal_btn)
+        root_layout.add_widget(button_layout)
+        
+        return root_layout
     
     def on_mode_change(self, instance, value):
         if instance == self.file_mode and value == 'down':
@@ -250,7 +295,8 @@ class SteganoApp(App):
             try:
                 if self.text_mode.state == 'down':
                     message = self.message_input.text
-                    output_path = hide_message(self.carrier_file, message)
+                    settings = self.get_current_settings()
+                    output_path = hide_message(self.carrier_file, message, settings)
                     if output_path and os.path.exists(output_path):
                         Clock.schedule_once(lambda dt, path=output_path: self.show_output_image(path))
                         Clock.schedule_once(lambda dt: self.set_success_message("Message hidden successfully!"))
@@ -261,7 +307,8 @@ class SteganoApp(App):
                     filename = os.path.basename(self.payload_file)
                     file_data = f"FILE:{filename}:{base64.b64encode(file_content).decode()}"
                     
-                    output_path = hide_message(self.carrier_file, file_data)
+                    settings = self.get_current_settings()
+                    output_path = hide_message(self.carrier_file, file_data, settings)
                     if output_path and os.path.exists(output_path):
                         Clock.schedule_once(lambda dt, path=output_path: self.show_output_image(path))
                         Clock.schedule_once(lambda dt: self.set_success_message("File hidden successfully!"))
@@ -282,7 +329,8 @@ class SteganoApp(App):
         
         def process():
             try:
-                revealed_data = reveal_message(self.carrier_file)
+                settings = self.get_current_settings()
+                revealed_data = reveal_message(self.carrier_file, settings)
                 
                 if not revealed_data:
                     Clock.schedule_once(lambda dt: self.set_error_message("No hidden data found in image"))
@@ -347,3 +395,45 @@ class SteganoApp(App):
             counter += 1
         
         return base_path
+
+    def toggle_settings(self, instance, value):
+        if value == 'down':
+            self.settings_panel.height = 160  # 40 height per setting
+            self.settings_panel.opacity = 1
+        else:
+            self.settings_panel.height = 0
+            self.settings_panel.opacity = 0
+        # Force layout update
+        self.settings_panel.parent.height = self.settings_toggle.height + self.settings_panel.height
+
+    def get_current_settings(self):
+        settings = SteganoSettings()
+        settings.encoding = self.encoding_spinner.text
+        settings.compression = self.compression_spinner.text == 'Enabled'
+        if self.encryption_input.text:
+            key = base64.b64encode(self.encryption_input.text.encode()[:32].ljust(32, b'\0'))
+            settings.encryption_key = key
+        return settings
+
+    def toggle_mode(self, instance, value):
+        if value == 'down':  # Only handle the button that's being pressed down
+            if instance == self.text_mode:
+                # Switch to text mode
+                self.message_input.opacity = 1
+                self.message_label.opacity = 1
+                self.message_input.height = 100
+                self.message_label.height = 50
+                self.payload_label.opacity = 0
+                self.payload_btn.opacity = 0
+                self.payload_label.height = 0
+                self.payload_btn.height = 0
+            else:  # file_mode
+                # Switch to file mode
+                self.message_input.opacity = 0
+                self.message_label.opacity = 0
+                self.message_input.height = 0
+                self.message_label.height = 0
+                self.payload_label.opacity = 1
+                self.payload_btn.opacity = 1
+                self.payload_label.height = 50
+                self.payload_btn.height = 50
