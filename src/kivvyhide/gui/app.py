@@ -270,6 +270,11 @@ class SteganoApp(App):
             self.set_error_message("Please select a file to hide")
             return
 
+        # Disable buttons
+        instance.disabled = True
+        self.carrier_btn.disabled = True
+        self.payload_btn.disabled = True
+
         self.start_progress()
         def process():
             try:
@@ -313,11 +318,15 @@ class SteganoApp(App):
                     if output_path and os.path.exists(output_path):
                         Clock.schedule_once(lambda dt, path=output_path: self.show_output_image(path))
                         Clock.schedule_once(lambda dt: self.set_success_message("File hidden successfully!"))
+                        # Reset file selection
+                        Clock.schedule_once(lambda dt: self.reset_file_selection())
                     
             except Exception as e:
                 Clock.schedule_once(lambda dt, err=str(e): self.set_error_message(err))
             finally:
                 Clock.schedule_once(lambda dt: self.complete_progress(), 1)
+                # Re-enable buttons
+                Clock.schedule_once(lambda dt: self.enable_buttons(instance))
         
         threading.Thread(target=process).start()
 
@@ -325,6 +334,11 @@ class SteganoApp(App):
         if not self.carrier_file:
             self.set_error_message("Please select a carrier image first")
             return
+        
+        # Disable buttons
+        instance.disabled = True
+        self.carrier_btn.disabled = True
+        self.payload_btn.disabled = True
         
         self.start_progress()
         
@@ -356,6 +370,8 @@ class SteganoApp(App):
                 Clock.schedule_once(lambda dt, err=str(error): self.set_error_message(err))
             finally:
                 Clock.schedule_once(lambda dt: self.complete_progress(), 1)
+                # Re-enable buttons
+                Clock.schedule_once(lambda dt: self.enable_buttons(instance))
         
         threading.Thread(target=process).start()
 
@@ -549,3 +565,12 @@ class SteganoApp(App):
         )
         self.seven_zip_password_layout.add_widget(self.seven_zip_password_input)
         self.settings_panel.add_widget(self.seven_zip_password_layout)
+
+    def reset_file_selection(self):
+        self.payload_file = None
+        self.payload_label.text = "File to Hide:"
+
+    def enable_buttons(self, hide_reveal_btn):
+        hide_reveal_btn.disabled = False
+        self.carrier_btn.disabled = False
+        self.payload_btn.disabled = False
