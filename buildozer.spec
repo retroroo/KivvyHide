@@ -6,8 +6,7 @@ source.dir = src
 source.include_exts = py,png,jpg,kv,atlas
 version = 1.0
 
-requirements = python3==3.10,\
-    kivy==2.3.0,\
+requirements = python3,kivy==2.3.0,\
     pillow==10.4.0,\
     stegano==0.11.4,\
     plyer==2.1.0,\
@@ -45,15 +44,12 @@ android.presplash_color = #000000
 android.skip_update = False
 
 # Python for Android specific
-p4a.branch = master
+p4a.branch = develop
 p4a.source_dir = 
 
 # Force a specific Python version from python.org
 p4a.bootstrap = sdl2
 p4a.python_package = python3
-p4a.android_api = 33
 
 # Add specific URLs for downloading
 android.gradle_url = https://services.gradle.org/distributions/gradle-7.3-bin.zip
-android.sdk_url = https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-android.ndk_url = https://dl.google.com/android/repository/android-ndk-r25b-linux.zip 
