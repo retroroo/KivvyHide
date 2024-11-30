@@ -5,7 +5,7 @@ from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.progressbar import ProgressBar
-from kivy.uix.image import Image
+from kivy.uix.image import Image as KivyImage
 from kivy.clock import Clock
 from kivy.properties import NumericProperty
 from kivvyhide.utils.stegano_wrapper import hide_message, reveal_message
@@ -22,6 +22,21 @@ from kivy.uix.spinner import Spinner
 from kivy.uix.scrollview import ScrollView
 import py7zr
 import tempfile
+from kivy.uix.popup import Popup
+from PIL import Image as PILImage
+from PIL.ExifTags import TAGS
+import imghdr
+from kivy.uix.image import Image as KivyImage
+from kivy.metrics import dp
+from PIL import Image
+import os
+from stegano import lsb
+import base64
+import zlib
+import magic
+import exifread
+from typing import Dict, Any
+from kivvyhide.utils.image_analyzer import ImageAnalyzer
 
 # Platform-specific imports
 ANDROID_PERMISSIONS = []
@@ -62,14 +77,21 @@ class SteganoApp(App):
                 print(f"Error requesting permissions: {e}")
     
     def build(self):
-        # Create a main layout that will contain everything
-        root_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        return self._create_main_page()
+    
+    def _create_main_page(self):
+        # Create main page with vertical layout
+        main_page = BoxLayout(orientation='vertical', padding=10, spacing=10)
         
-        # Create a container for main content (everything except settings)
-        main_container = BoxLayout(
+        # Create and add the analysis button
+        self.analysis_btn = self.create_analysis_button()
+        main_page.add_widget(self.analysis_btn)
+        
+        # Create a container for main content and buttons
+        content_and_buttons = BoxLayout(
             orientation='vertical',
             spacing=10,
-            size_hint_y=0.8  # Take up 80% of vertical space
+            size_hint_y=0.8
         )
         
         # Create scrollable content
@@ -81,16 +103,11 @@ class SteganoApp(App):
         )
         main_content.bind(minimum_height=main_content.setter('height'))
         
-        # Add all your existing widgets to main_content
-        # Image preview layout
-        image_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=200, spacing=10)
-        
-        # Rest of your existing widget creation code...
         # Image preview layout (side by side)
         image_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=200, spacing=10)
         
         # Input Image Preview
-        self.input_image = Image(
+        self.input_image = KivyImage(
             source='',
             size_hint=(1, 1),
             fit_mode='contain'
@@ -98,7 +115,7 @@ class SteganoApp(App):
         self.input_image.opacity = 0
         
         # Output Image Preview
-        self.output_image = Image(
+        self.output_image = KivyImage(
             source='',
             size_hint=(1, 1),
             fit_mode='contain'
@@ -142,15 +159,13 @@ class SteganoApp(App):
         main_content.add_widget(self.payload_btn)
         
         main_scroll.add_widget(main_content)
+        content_and_buttons.add_widget(main_scroll)
         
-        # Add main content to main container
-        main_container.add_widget(main_scroll)
-        
-        # Create buttons and progress layout
+        # Create buttons and progress layout with fixed height
         button_and_progress = BoxLayout(
             orientation='vertical',
             size_hint_y=None,
-            height=90,  # Fixed height for buttons and progress
+            height=90,
             spacing=10
         )
         
@@ -175,42 +190,21 @@ class SteganoApp(App):
         # Add progress and buttons to their container
         button_and_progress.add_widget(progress_layout)
         button_and_progress.add_widget(button_layout)
+        content_and_buttons.add_widget(button_and_progress)
         
-        # Create settings container with fixed size
-        settings_container = BoxLayout(
-            orientation='vertical',
-            size_hint_y=0.2,  # Take up 20% of vertical space
-            minimum_height=50
-        )
-        
-        # Create settings toggle and panel
-        self.settings_toggle = HighlightButton(
+        # Create settings button
+        settings_btn = HighlightButton(
             text='Advanced Settings',
             size_hint_y=None,
             height=50
         )
-        self.settings_toggle.bind(on_release=self.toggle_settings)
+        settings_btn.bind(on_release=self.toggle_settings)
         
-        self.settings_panel = BoxLayout(
-            orientation='vertical',
-            size_hint_y=None,
-            height=0,
-            opacity=0
-        )
+        # Add all containers to main page
+        main_page.add_widget(content_and_buttons)
+        main_page.add_widget(settings_btn)
         
-        # Create settings widgets
-        self.create_settings_widgets()
-        
-        # Add everything to their respective containers
-        settings_container.add_widget(self.settings_toggle)
-        settings_container.add_widget(self.settings_panel)
-        
-        # Add all containers to root layout
-        root_layout.add_widget(main_container)
-        root_layout.add_widget(button_and_progress)
-        root_layout.add_widget(settings_container)
-        
-        return root_layout
+        return main_page
     
     def on_mode_change(self, instance, value):
         if instance == self.file_mode and value == 'down':
@@ -270,6 +264,10 @@ class SteganoApp(App):
             self.input_image.opacity = 1
             self.output_image.opacity = 0
             self.output_image.source = ''
+            
+            # Show analysis button
+            if hasattr(self, 'analysis_btn'):
+                self.analysis_btn.opacity = 1
     
     def handle_payload_selection(self, selection):
         if selection:
@@ -380,8 +378,10 @@ class SteganoApp(App):
                 
                 # Update UI on main thread
                 Clock.schedule_once(lambda dt: self.update_revealed_data(revealed_data))
-            except Exception as error:
-                Clock.schedule_once(lambda dt: self.set_error_message(str(error)))
+            except Exception as e:
+                # Store error message in a variable that can be accessed by the lambda
+                error_msg = str(e)
+                Clock.schedule_once(lambda dt: self.set_error_message(error_msg))
             finally:
                 # Re-enable UI on main thread
                 Clock.schedule_once(lambda dt: self.enable_buttons(instance))
@@ -434,24 +434,14 @@ class SteganoApp(App):
         return base_path
 
     def toggle_settings(self, instance):
-        is_open = self.settings_panel.height > 0
+        if not hasattr(self, 'settings_popup'):
+            self.create_settings_popup()
+        
+        # Enable/disable inputs based on popup visibility
+        is_open = self.settings_popup.is_open if hasattr(self.settings_popup, 'is_open') else False
         
         if not is_open:
-            # Calculate total height for all settings widgets
-            base_height = 280  # Height for basic settings
-            if self.seven_zip_spinner.text == 'AES256':
-                base_height += 40  # Add height for password field if 7z is enabled
-                self.seven_zip_password_input.disabled = False
-                self.seven_zip_password_layout.height = 40
-                self.seven_zip_password_layout.opacity = 1
-            
-            # Show settings panel
-            self.settings_panel.height = base_height
-            self.settings_panel.opacity = 1
-            self.settings_toggle.text = 'Hide Advanced Settings'
-            self.settings_toggle.parent.height = base_height + 50
-            
-            # Enable all spinners and inputs
+            # Enable all inputs
             self.encoding_spinner.disabled = False
             self.compression_spinner.disabled = False
             self.encryption_input.disabled = False
@@ -459,26 +449,15 @@ class SteganoApp(App):
             self.custom_filename_input.disabled = False
             self.custom_path_input.disabled = False
             
-            # Find and enable the path choose button
-            for layout in self.settings_panel.children:
-                if isinstance(layout, BoxLayout):
-                    for widget in layout.children:
-                        if isinstance(widget, BoxLayout):  # path_inner_layout
-                            for child in widget.children:
-                                if isinstance(child, HighlightButton):  # path_choose_btn
-                                    child.disabled = False
-            
-            # Enable password input if 7z encryption is enabled
             if self.seven_zip_spinner.text == 'AES256':
                 self.seven_zip_password_input.disabled = False
-        else:
-            # Hide settings panel
-            self.settings_panel.height = 0
-            self.settings_panel.opacity = 0
-            self.settings_toggle.text = 'Advanced Settings'
-            self.settings_toggle.parent.height = 50
+                self.seven_zip_password_layout.height = 40
+                self.seven_zip_password_layout.opacity = 1
             
-            # Disable all widgets
+            self.settings_popup.open()
+            self.settings_popup.is_open = True
+        else:
+            # Disable all inputs
             self.encoding_spinner.disabled = True
             self.compression_spinner.disabled = True
             self.encryption_input.disabled = True
@@ -487,17 +466,8 @@ class SteganoApp(App):
             self.custom_filename_input.disabled = True
             self.custom_path_input.disabled = True
             
-            # Find and disable the path choose button
-            for layout in self.settings_panel.children:
-                if isinstance(layout, BoxLayout):
-                    for widget in layout.children:
-                        if isinstance(widget, BoxLayout):  # path_inner_layout
-                            for child in widget.children:
-                                if isinstance(child, HighlightButton):  # path_choose_btn
-                                    child.disabled = True
-        
-        # Force layout update
-        self.settings_toggle.parent.size_hint_y = None
+            self.settings_popup.dismiss()
+            self.settings_popup.is_open = False
 
     def get_current_settings(self):
         settings = SteganoSettings()
@@ -540,12 +510,54 @@ class SteganoApp(App):
             self.seven_zip_password_layout.height = 40
             self.seven_zip_password_layout.opacity = 1
             self.seven_zip_password_input.disabled = False  # Enable input when AES256 is selected
-            self.settings_panel.height = self.settings_panel.height + 40
+            self.settings_popup.height = self.settings_popup.height + 40
         else:
             self.seven_zip_password_layout.height = 0
             self.seven_zip_password_layout.opacity = 0
             self.seven_zip_password_input.disabled = True  # Disable input when not using AES256
-            self.settings_panel.height = self.settings_panel.height - 40
+            self.settings_popup.height = self.settings_popup.height - 40
+
+    def create_settings_popup(self):
+        # Create popup content
+        content = BoxLayout(orientation='vertical', spacing=10, padding=10)
+        
+        # Create scrollview for settings
+        scroll = ScrollView(size_hint=(1, 1))
+        settings_layout = BoxLayout(
+            orientation='vertical',
+            spacing=5,
+            size_hint_y=None
+        )
+        settings_layout.bind(minimum_height=settings_layout.setter('height'))
+        
+        # Add all settings widgets to the layout
+        self.settings_panel = settings_layout
+        self.create_settings_widgets()
+        
+        # Add close button
+        close_button = HighlightButton(
+            text='Close',
+            size_hint=(1, None),
+            height=50
+        )
+        
+        # Create and setup popup
+        self.settings_popup = Popup(
+            title='Advanced Settings',
+            content=content,
+            size_hint=(0.8, 0.9),
+            auto_dismiss=True
+        )
+        
+        # Bind close button
+        close_button.bind(on_release=self.settings_popup.dismiss)
+        
+        # Add widgets to content
+        scroll.add_widget(settings_layout)
+        content.add_widget(scroll)
+        content.add_widget(close_button)
+        
+        return self.settings_popup
 
     def create_settings_widgets(self):
         # Add encoding spinner
@@ -672,3 +684,121 @@ class SteganoApp(App):
         instance.disabled = True
         # Re-enable after a short delay
         Clock.schedule_once(lambda dt: setattr(instance, 'disabled', False), 0.1)
+
+    def create_analysis_button(self):
+        analysis_btn = Button(
+            text='🔍',
+            size_hint=(None, None),
+            size=(dp(40), dp(40)),
+            pos_hint={'right': 0.98, 'top': 0.98},
+            background_color=(0.2, 0.2, 0.2, 0.8),
+            opacity=0
+        )
+        analysis_btn.bind(on_release=self.show_analysis)
+        return analysis_btn
+
+    def show_analysis(self, instance):
+        if not self.carrier_file:
+            return
+        
+        # Create loading popup
+        loading = Popup(
+            title='Analyzing Image',
+            content=Label(text='Please wait...'),
+            size_hint=(0.4, 0.2),
+            auto_dismiss=False
+        )
+        loading.open()
+        
+        def analyze_process():
+            try:
+                analyzer = ImageAnalyzer(self.carrier_file)
+                results = analyzer.analyze()
+                
+                # Update UI on main thread
+                Clock.schedule_once(lambda dt: self.show_analysis_results(results))
+            except Exception as e:
+                Clock.schedule_once(lambda dt: self.set_error_message(f"Analysis error: {str(e)}"))
+            finally:
+                Clock.schedule_once(lambda dt: loading.dismiss())
+        
+        threading.Thread(target=analyze_process, daemon=True).start()
+
+    def show_analysis_results(self, results):
+        content = BoxLayout(orientation='vertical', padding=10, spacing=5)
+        scroll = ScrollView(size_hint=(1, 0.9))
+        info_layout = BoxLayout(
+            orientation='vertical',
+            spacing=5,
+            size_hint_y=None
+        )
+        info_layout.bind(minimum_height=info_layout.setter('height'))
+        
+        sections = [
+            ('File Information', [
+                f"Filename: {results['filename']}",
+                f"Format: {results['basic_info']['format']}",
+                f"Size: {results['basic_info']['size'][0]}x{results['basic_info']['size'][1]}",
+                f"Mode: {results['basic_info']['mode']}",
+                f"File Size: {results['basic_info']['file_size']}",
+                f"Bits per Channel: {results['basic_info']['bits_per_channel']}"
+            ]),
+            ('Steganography Analysis', [
+                f"Hidden Data Detected: {'Yes' if results['steganography']['has_hidden_data'] else 'No'}",
+                f"Confidence Level: {results['steganography']['confidence']}",
+                "Detected Methods:" if results['steganography']['detected_methods'] else "No methods detected",
+                *[f"• {method}" for method in results['steganography']['detected_methods']]
+            ]),
+            ('Statistical Analysis', [
+                f"LSB Distribution: {results['statistical_analysis']['lsb_distribution']}",
+                f"Randomness Test P-value: {results['statistical_analysis']['chi_square_p_value']}",
+                f"Statistical Anomalies: {'Yes' if results['statistical_analysis']['randomness_suspicious'] else 'No'}"
+            ]),
+            ('Compression', [
+                f"Type: {results['compression']['compression']}",
+                f"Level: {results['compression']['compression_level']}",
+                *results['compression']['details']
+            ]),
+            ('File Type Details', [results['file_type']]),
+            ('Metadata', [f"{k}: {v}" for k, v in results['metadata'].items()])
+        ]
+        
+        for section_title, items in sections:
+            section_label = Label(
+                text=f"[b]{section_title}[/b]",
+                markup=True,
+                size_hint_y=None,
+                height=30,
+                halign='left'
+            )
+            info_layout.add_widget(section_label)
+            
+            for item in items:
+                item_label = Label(
+                    text=item,
+                    size_hint_y=None,
+                    height=25,
+                    text_size=(None, 25),
+                    halign='left'
+                )
+                info_layout.add_widget(item_label)
+        
+        scroll.add_widget(info_layout)
+        content.add_widget(scroll)
+        
+        close_btn = HighlightButton(
+            text='Close',
+            size_hint_y=None,
+            height=50
+        )
+        
+        popup = Popup(
+            title=f'Image Analysis - {results["filename"]}',
+            content=content,
+            size_hint=(0.8, 0.9),
+            auto_dismiss=True
+        )
+        
+        close_btn.bind(on_release=popup.dismiss)
+        content.add_widget(close_btn)
+        popup.open()
