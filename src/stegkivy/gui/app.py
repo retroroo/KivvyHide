@@ -8,14 +8,14 @@ from kivy.uix.progressbar import ProgressBar
 from kivy.uix.image import Image as KivyImage
 from kivy.clock import Clock
 from kivy.properties import NumericProperty
-from kivvyhide.utils.stegano_wrapper import hide_message, reveal_message
+from stegkivy.utils.stegano_wrapper import hide_message, reveal_message
 from plyer import filechooser
 import base64
 import os
 import threading
 from kivy.utils import platform
 from kivy.uix.slider import Slider
-from kivvyhide.utils.settings import SteganoSettings
+from stegkivy.utils.settings import SteganoSettings
 from cryptography.fernet import Fernet
 import zlib
 from kivy.uix.spinner import Spinner
@@ -36,7 +36,7 @@ import zlib
 import magic
 import exifread
 from typing import Dict, Any
-from kivvyhide.utils.image_analyzer import ImageAnalyzer
+from stegkivy.utils.image_analyzer import ImageAnalyzer
 from kivy.graphics import Color, Line
 from kivy.uix.widget import Widget
 from kivymd.app import MDApp
