@@ -6,7 +6,7 @@ source.dir = src
 source.include_exts = py,png,jpg,kv,atlas
 version = 1.0
 
-requirements = python3,\
+requirements = python3==3.10,\
     kivy==2.3.0,\
     pillow==10.4.0,\
     stegano==0.11.4,\
