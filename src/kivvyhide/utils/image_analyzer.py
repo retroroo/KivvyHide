@@ -107,32 +107,50 @@ class ImageAnalyzer:
                 'details': []
             }
             
+            # Calculate compression ratio first
+            file_size = os.path.getsize(self.image_path)
+            width, height = img.size
+            bits_per_channel = img.bits if hasattr(img, 'bits') else 8
+            theoretical_size = width * height * len(img.getbands()) * (bits_per_channel / 8)
+            compression_ratio = theoretical_size / file_size
+            
             # Check file format specific compression
             if img.format == 'JPEG':
                 compression_info['compression'] = 'JPEG DCT'
-                # Try to estimate JPEG quality
                 try:
                     quality = self._estimate_jpeg_quality(img)
                     compression_info['compression_level'] = f"~{quality}%"
                     compression_info['details'].append(f"JPEG Quality: ~{quality}%")
                 except:
-                    compression_info['compression_level'] = 'Unknown JPEG quality'
+                    compression_info['compression_level'] = 'Standard JPEG'
             
             elif img.format == 'PNG':
-                # Check if it's using DEFLATE compression
+                # PNG always uses DEFLATE compression
+                compression_info['compression'] = 'PNG DEFLATE'
                 if 'compress_level' in img.info:
-                    compression_info['compression'] = 'PNG DEFLATE'
                     compression_info['compression_level'] = str(img.info['compress_level'])
-                elif 'compression' in img.info:
-                    compression_info['compression'] = f"PNG {img.info['compression']}"
+                elif compression_ratio > 8:
+                    compression_info['compression_level'] = 'High'
+                elif compression_ratio > 4:
+                    compression_info['compression_level'] = 'Medium'
+                else:
+                    compression_info['compression_level'] = 'Low'
             
-            # Check for additional compression indicators
-            file_size = os.path.getsize(self.image_path)
-            width, height = img.size
-            theoretical_size = width * height * len(img.getbands())
-            compression_ratio = theoretical_size / file_size
+            # Update compression type based on ratio if not already set
+            if compression_info['compression'] == 'none' and compression_ratio > 1.5:
+                compression_info['compression'] = 'Generic'
+                if compression_ratio > 8:
+                    compression_info['compression_level'] = 'High'
+                elif compression_ratio > 4:
+                    compression_info['compression_level'] = 'Medium'
+                else:
+                    compression_info['compression_level'] = 'Low'
             
             compression_info['details'].append(f"Compression ratio: {compression_ratio:.2f}:1")
+            if compression_ratio > 1.5:
+                compression_info['details'].append(
+                    f"Space saved: {((1 - (file_size / theoretical_size)) * 100):.1f}%"
+                )
             
             return compression_info
     
