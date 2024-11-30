@@ -127,24 +127,27 @@ class SteganoApp(App):
         content_layout.add_widget(self.progress_bar)
         
         # Add the advanced settings at the bottom
-        settings_expander = BoxLayout(orientation='vertical', size_hint_y=None, height=50)
+        settings_layout = BoxLayout(orientation='vertical', size_hint_y=None)
+        settings_layout.bind(minimum_height=settings_layout.setter('height'))
+
+        # Create toggle button in its own layout (always enabled)
         self.settings_toggle = ToggleButton(
             text='Advanced Settings',
             size_hint_y=None,
             height=50
         )
         self.settings_toggle.bind(state=self.toggle_settings)
-        settings_expander.add_widget(self.settings_toggle)
-        
-        # Settings panel with dropdowns
+        settings_layout.add_widget(self.settings_toggle)
+
+        # Settings panel with dropdowns (separate from toggle button)
         self.settings_panel = BoxLayout(
             orientation='vertical', 
             size_hint_y=None, 
             height=0,
             opacity=0
         )
-        
-        # Encoding dropdown
+
+        # Add encoding spinner
         encoding_layout = BoxLayout(size_hint_y=None, height=40)
         encoding_layout.add_widget(Label(text='Encoding:'))
         self.encoding_spinner = Spinner(
@@ -154,31 +157,30 @@ class SteganoApp(App):
         )
         encoding_layout.add_widget(self.encoding_spinner)
         self.settings_panel.add_widget(encoding_layout)
-        
-        # Compression toggle
+
+        # Add compression spinner
         compression_layout = BoxLayout(size_hint_y=None, height=40)
         compression_layout.add_widget(Label(text='Compression:'))
         self.compression_spinner = Spinner(
-            text='Enabled',
+            text='Disabled',
             values=('Enabled', 'Disabled'),
             size_hint_x=0.7
         )
         compression_layout.add_widget(self.compression_spinner)
         self.settings_panel.add_widget(compression_layout)
-        
-        # Encryption key
+
+        # Add encryption key input
         encryption_layout = BoxLayout(size_hint_y=None, height=40)
         encryption_layout.add_widget(Label(text='Encryption Key:'))
         self.encryption_input = TextInput(
             multiline=False,
-            size_hint_x=0.7,
-            password=True
+            size_hint_x=0.7
         )
         encryption_layout.add_widget(self.encryption_input)
         self.settings_panel.add_widget(encryption_layout)
-        
-        settings_expander.add_widget(self.settings_panel)
-        content_layout.add_widget(settings_expander)
+
+        settings_layout.add_widget(self.settings_panel)
+        content_layout.add_widget(settings_layout)
         
         # Create a ScrollView to contain the content
         scroll_view = ScrollView(size_hint=(1, 1))
@@ -398,13 +400,24 @@ class SteganoApp(App):
 
     def toggle_settings(self, instance, value):
         if value == 'down':
-            self.settings_panel.height = 160  # 40 height per setting
+            # Show and enable settings
+            self.settings_panel.height = 160
             self.settings_panel.opacity = 1
+            # Enable only the settings widgets, not the toggle button
+            self.encoding_spinner.disabled = False
+            self.compression_spinner.disabled = False
+            self.encryption_input.disabled = False
         else:
+            # Hide and disable settings
             self.settings_panel.height = 0
             self.settings_panel.opacity = 0
+            # Disable only the settings widgets, not the toggle button
+            self.encoding_spinner.disabled = True
+            self.compression_spinner.disabled = True
+            self.encryption_input.disabled = True
+        
         # Force layout update
-        self.settings_panel.parent.height = self.settings_toggle.height + self.settings_panel.height
+        self.settings_panel.parent.minimum_height = self.settings_toggle.height + self.settings_panel.height
 
     def get_current_settings(self):
         settings = SteganoSettings()
