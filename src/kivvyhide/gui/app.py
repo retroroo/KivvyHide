@@ -65,10 +65,38 @@ class SteganoApp(App):
         # Create a main layout that will contain everything
         root_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
         
-        # Create a scrollable content layout for the main interface
-        content_layout = BoxLayout(orientation='vertical', spacing=10, size_hint_y=None)
-        content_layout.bind(minimum_height=content_layout.setter('height'))
+        # Create settings panel and toggle button first
+        self.settings_panel = BoxLayout(
+            orientation='vertical',
+            size_hint_y=None,
+            height=0,
+            opacity=0
+        )
         
+        self.settings_toggle = HighlightButton(
+            text='Advanced Settings',
+            size_hint_y=None,
+            height=50
+        )
+        self.settings_toggle.bind(on_release=self.toggle_settings)
+        
+        # Create all settings widgets
+        self.create_settings_widgets()
+        
+        # Create a scrollable content layout for the main interface
+        main_scroll = ScrollView(size_hint=(1, 1))
+        main_content = BoxLayout(
+            orientation='vertical', 
+            spacing=10, 
+            size_hint_y=None
+        )
+        main_content.bind(minimum_height=main_content.setter('height'))
+        
+        # Add all your existing widgets to main_content
+        # Image preview layout
+        image_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=200, spacing=10)
+        
+        # Rest of your existing widget creation code...
         # Image preview layout (side by side)
         image_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=200, spacing=10)
         
@@ -90,7 +118,7 @@ class SteganoApp(App):
         
         image_layout.add_widget(self.input_image)
         image_layout.add_widget(self.output_image)
-        content_layout.add_widget(image_layout)
+        main_content.add_widget(image_layout)
         
         # Mode selection
         mode_layout = BoxLayout(size_hint_y=None, height=50)
@@ -100,7 +128,7 @@ class SteganoApp(App):
         self.file_mode.bind(state=self.toggle_mode)
         mode_layout.add_widget(self.text_mode)
         mode_layout.add_widget(self.file_mode)
-        content_layout.add_widget(mode_layout)
+        main_content.add_widget(mode_layout)
         
         # Carrier image selection
         carrier_layout = BoxLayout(size_hint_y=None, height=50)
@@ -109,74 +137,51 @@ class SteganoApp(App):
         self.carrier_btn = HighlightButton(text='Choose Image', size_hint_x=0.7)
         self.carrier_btn.bind(on_release=self.choose_carrier)
         carrier_layout.add_widget(self.carrier_btn)
-        content_layout.add_widget(carrier_layout)
+        main_content.add_widget(carrier_layout)
         
         # Message input
         self.message_label = Label(text='Message:', size_hint_y=None, height=50)
-        content_layout.add_widget(self.message_label)
+        main_content.add_widget(self.message_label)
         self.message_input = TextInput(multiline=True, size_hint_y=None, height=100)
-        content_layout.add_widget(self.message_input)
+        main_content.add_widget(self.message_input)
         
         # File payload selection
         self.payload_label = Label(text='File to Hide:', size_hint_y=None, height=0, opacity=0)
-        content_layout.add_widget(self.payload_label)
+        main_content.add_widget(self.payload_label)
         self.payload_btn = HighlightButton(text='Choose File', size_hint_y=None, height=0, opacity=0)
         self.payload_btn.bind(on_release=self.choose_payload)
-        content_layout.add_widget(self.payload_btn)
+        main_content.add_widget(self.payload_btn)
         
         # Progress bar
         self.progress_bar = ProgressBar(max=100, size_hint_y=None, height=20)
-        content_layout.add_widget(self.progress_bar)
+        main_content.add_widget(self.progress_bar)
         
-        # Add the advanced settings at the bottom
-        settings_layout = BoxLayout(
-            orientation='vertical', 
-            size_hint_y=None,
-            height=50,
-            spacing=5
-        )
-
-        # Create toggle button
-        self.settings_toggle = HighlightButton(
-            text='Advanced Settings',
-            size_hint_y=None,
-            size_hint_x=1,
-            height=50
-        )
-        self.settings_toggle.bind(on_release=self.toggle_settings)
-        settings_layout.add_widget(self.settings_toggle)
-
-        # Settings panel (initially hidden)
-        self.settings_panel = BoxLayout(
-            orientation='vertical', 
-            size_hint_y=None, 
-            height=0,
-            opacity=0,
-            spacing=5
-        )
-
-        # Create and add settings widgets
-        self.create_settings_widgets()
-        settings_layout.add_widget(self.settings_panel)
-        content_layout.add_widget(settings_layout)
+        main_scroll.add_widget(main_content)
         
-        # Create a ScrollView to contain the content
-        scroll_view = ScrollView(size_hint=(1, 1))
-        scroll_view.add_widget(content_layout)
-        root_layout.add_widget(scroll_view)
-        
-        # Action buttons
-        button_layout = BoxLayout(size_hint_y=None, height=50, spacing=10)
+        # Create buttons layout
+        button_layout = BoxLayout(size_hint_y=None, height=50)
         hide_btn = HighlightButton(text='Hide Data')
         hide_btn.bind(on_release=self.hide_data)
         reveal_btn = HighlightButton(text='Reveal Data')
         reveal_btn.bind(on_release=self.reveal_data)
         button_layout.add_widget(hide_btn)
         button_layout.add_widget(reveal_btn)
-        root_layout.add_widget(button_layout)
         
-        # Bind 7z spinner to show/hide password field
-        self.seven_zip_spinner.bind(text=self.on_seven_zip_change)
+        # Create a separate layout for settings that stays at bottom
+        settings_container = BoxLayout(
+            orientation='vertical',
+            size_hint_y=None,
+            height=50
+        )
+        
+        # Add settings toggle and panel to settings container
+        settings_container.add_widget(self.settings_toggle)
+        settings_container.add_widget(self.settings_panel)
+        
+        # Add everything to root layout
+        root_layout.add_widget(main_scroll)
+        root_layout.add_widget(button_layout)  # Add buttons before settings
+        root_layout.add_widget(settings_container)
         
         return root_layout
     
@@ -417,46 +422,61 @@ class SteganoApp(App):
         is_open = self.settings_panel.height > 0
         
         if not is_open:
+            # Calculate total height for all settings widgets
+            base_height = 280  # Height for basic settings
+            if self.seven_zip_spinner.text != 'Disabled':
+                base_height += 40  # Add height for password field if 7z is enabled
+            
             # Show settings panel
-            self.settings_panel.height = 200
+            self.settings_panel.height = base_height
             self.settings_panel.opacity = 1
             self.settings_toggle.text = 'Hide Advanced Settings'
-            self.settings_toggle.parent.height = 250  # Button height + panel height
+            self.settings_toggle.parent.height = base_height + 50  # Button height + panel height
             
-            # Enable all settings widgets except labels
-            for layout in self.settings_panel.children:
-                for widget in layout.children:
-                    if not isinstance(widget, Label):
-                        widget.disabled = False
-                    
-            # Specifically enable all spinners and inputs
+            # Enable all spinners and inputs
             self.encoding_spinner.disabled = False
             self.compression_spinner.disabled = False
             self.encryption_input.disabled = False
             self.seven_zip_spinner.disabled = False
+            self.custom_filename_input.disabled = False
+            self.custom_path_input.disabled = False
             
-            # Enable password input if 7z encryption is not disabled
-            if self.seven_zip_spinner.text != 'Disabled':
-                self.seven_zip_password_layout.height = 40
-                self.seven_zip_password_layout.opacity = 1
+            # Find and enable the path choose button
+            for layout in self.settings_panel.children:
+                if isinstance(layout, BoxLayout):
+                    for widget in layout.children:
+                        if isinstance(widget, BoxLayout):  # path_inner_layout
+                            for child in widget.children:
+                                if isinstance(child, HighlightButton):  # path_choose_btn
+                                    child.disabled = False
+            
+            # Enable password input if 7z encryption is enabled
+            if self.seven_zip_spinner.text == 'AES256':
                 self.seven_zip_password_input.disabled = False
         else:
             # Hide settings panel
             self.settings_panel.height = 0
             self.settings_panel.opacity = 0
             self.settings_toggle.text = 'Advanced Settings'
-            self.settings_toggle.parent.height = 50  # Just button height
+            self.settings_toggle.parent.height = 50
             
-            # Disable all settings widgets except labels
-            for layout in self.settings_panel.children:
-                for widget in layout.children:
-                    if not isinstance(widget, Label):
-                        widget.disabled = True
-            
-            # Specifically disable 7z related widgets
+            # Disable all widgets
+            self.encoding_spinner.disabled = True
+            self.compression_spinner.disabled = True
+            self.encryption_input.disabled = True
             self.seven_zip_spinner.disabled = True
             self.seven_zip_password_input.disabled = True
-            self.seven_zip_password_layout.disabled = True
+            self.custom_filename_input.disabled = True
+            self.custom_path_input.disabled = True
+            
+            # Find and disable the path choose button
+            for layout in self.settings_panel.children:
+                if isinstance(layout, BoxLayout):
+                    for widget in layout.children:
+                        if isinstance(widget, BoxLayout):  # path_inner_layout
+                            for child in widget.children:
+                                if isinstance(child, HighlightButton):  # path_choose_btn
+                                    child.disabled = True
         
         # Force layout update
         self.settings_toggle.parent.size_hint_y = None
@@ -468,8 +488,10 @@ class SteganoApp(App):
         if self.encryption_input.text:
             key = base64.b64encode(self.encryption_input.text.encode()[:32].ljust(32, b'\0'))
             settings.encryption_key = key
-        if self.seven_zip_spinner.text == 'Enabled':
+        if self.seven_zip_spinner.text == 'AES256':
             settings.seven_zip_encryption = True
+        settings.custom_filename = self.custom_filename_input.text if self.custom_filename_input.text.strip() else None
+        settings.custom_path = self.custom_path_input.text if self.custom_path_input.text.strip() else None
         return settings
 
     def toggle_mode(self, instance, value):
@@ -499,11 +521,11 @@ class SteganoApp(App):
         if value != 'Disabled':
             self.seven_zip_password_layout.height = 40
             self.seven_zip_password_layout.opacity = 1
-            self.settings_panel.height = 200  # Increase panel height
+            self.settings_panel.height = self.settings_panel.height + 40  # Add height for password field
         else:
             self.seven_zip_password_layout.height = 0
             self.seven_zip_password_layout.opacity = 0
-            self.settings_panel.height = 160  # Return to original height
+            self.settings_panel.height = self.settings_panel.height - 40  # Reduce height when hiding password field
 
     def create_settings_widgets(self):
         # Add encoding spinner
@@ -566,6 +588,41 @@ class SteganoApp(App):
         self.seven_zip_password_layout.add_widget(self.seven_zip_password_input)
         self.settings_panel.add_widget(self.seven_zip_password_layout)
 
+        # Add custom filename input
+        filename_layout = BoxLayout(size_hint_y=None, height=40)
+        filename_layout.add_widget(Label(text='Custom Filename:'))
+        self.custom_filename_input = TextInput(
+            multiline=False,
+            size_hint_x=0.7,
+            disabled=True,
+            hint_text='Leave empty for default'
+        )
+        filename_layout.add_widget(self.custom_filename_input)
+        self.settings_panel.add_widget(filename_layout)
+
+        # Add custom path input with choose button
+        path_layout = BoxLayout(size_hint_y=None, height=40)
+        path_inner_layout = BoxLayout(size_hint_x=0.7)
+        
+        self.custom_path_input = TextInput(
+            multiline=False,
+            size_hint_x=0.7,
+            disabled=True,
+            hint_text='Leave empty for same folder'
+        )
+        path_choose_btn = HighlightButton(
+            text='...',
+            size_hint_x=0.3,
+            disabled=True
+        )
+        path_choose_btn.bind(on_release=self.choose_custom_path)
+        
+        path_layout.add_widget(Label(text='Custom Path:'))
+        path_inner_layout.add_widget(self.custom_path_input)
+        path_inner_layout.add_widget(path_choose_btn)
+        path_layout.add_widget(path_inner_layout)
+        self.settings_panel.add_widget(path_layout)
+
     def reset_file_selection(self):
         self.payload_file = None
         self.payload_label.text = "File to Hide:"
@@ -574,3 +631,18 @@ class SteganoApp(App):
         hide_reveal_btn.disabled = False
         self.carrier_btn.disabled = False
         self.payload_btn.disabled = False
+
+    def choose_custom_path(self, instance):
+        try:
+            filechooser.choose_dir(
+                on_selection=self.handle_path_selection,
+                title="Select Output Directory"
+            )
+        except NotImplementedError:
+            self.message_input.text = "Directory chooser not supported on this platform"
+        except Exception as e:
+            self.message_input.text = f"Error opening directory chooser: {str(e)}"
+
+    def handle_path_selection(self, selection):
+        if selection and len(selection) > 0:
+            self.custom_path_input.text = selection[0]

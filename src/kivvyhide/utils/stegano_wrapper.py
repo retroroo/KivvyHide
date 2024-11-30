@@ -25,14 +25,34 @@ def hide_message(image_path: str, message: str, settings: SteganoSettings = None
     # Hide message using LSB
     secret = lsb.hide(image_path, processed_message)
     
-    base_output_path = image_path.rsplit('.', 1)[0] + '_secret.png'
-    output_path = base_output_path
+    # Handle custom filename and path
+    if settings.custom_filename:
+        # Ensure filename ends with .png
+        if not settings.custom_filename.lower().endswith('.png'):
+            base_filename = settings.custom_filename + '.png'
+        else:
+            base_filename = settings.custom_filename
+    else:
+        base_filename = os.path.splitext(os.path.basename(image_path))[0] + '_secret.png'
+    
+    # Determine output directory
+    if settings.custom_path:
+        output_dir = settings.custom_path
+    else:
+        output_dir = os.path.dirname(image_path)
+    
+    # Combine path and filename
+    output_path = os.path.join(output_dir, base_filename)
+    
+    # Handle file exists case
     counter = 1
     while os.path.exists(output_path):
-        name, ext = os.path.splitext(base_output_path)
-        output_path = f"{name}_{counter}{ext}"
+        name, ext = os.path.splitext(base_filename)
+        new_filename = f"{name}_{counter}{ext}"
+        output_path = os.path.join(output_dir, new_filename)
         counter += 1
     
+    # Save the image
     secret.save(output_path)
     return output_path
 
