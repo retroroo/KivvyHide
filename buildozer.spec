@@ -42,4 +42,18 @@ fullscreen = 0
 android.presplash_color = #000000
 
 # (bool) If True, then skip trying to update the Android sdk
-android.skip_update = False 
+android.skip_update = False
+
+# Python for Android specific
+p4a.branch = master
+p4a.source_dir = 
+
+# Force a specific Python version from python.org
+p4a.bootstrap = sdl2
+p4a.python_package = python3
+p4a.android_api = 33
+
+# Add specific URLs for downloading
+android.gradle_url = https://services.gradle.org/distributions/gradle-7.3-bin.zip
+android.sdk_url = https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+android.ndk_url = https://dl.google.com/android/repository/android-ndk-r25b-linux.zip 
