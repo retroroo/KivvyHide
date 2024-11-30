@@ -39,6 +39,9 @@ from typing import Dict, Any
 from kivvyhide.utils.image_analyzer import ImageAnalyzer
 from kivy.graphics import Color, Line
 from kivy.uix.widget import Widget
+from kivymd.app import MDApp
+from kivymd.uix.button import MDIconButton
+from kivymd.uix.label import MDLabel
 
 # Platform-specific imports
 ANDROID_PERMISSIONS = []
@@ -61,13 +64,51 @@ class HighlightButton(Button):
     def on_release(self):
         self.background_color = [1, 1, 1, 1]
 
-class SteganoApp(App):
+class SteganoApp(MDApp):
     progress = NumericProperty(0)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.carrier_file = None
         self.payload_file = None
+        
+        # Initialize settings attributes
+        self.settings_panel = None
+        self.settings_popup = None
+        self.encoding_spinner = Spinner(
+            text='utf-8',
+            values=('utf-8', 'ascii', 'latin1'),
+            size_hint_x=0.7
+        )
+        self.compression_spinner = Spinner(
+            text='None',
+            values=('None', 'Fast', 'Default', 'Best'),
+            size_hint_x=0.7
+        )
+        self.encryption_input = TextInput(
+            multiline=False,
+            size_hint_x=0.7
+        )
+        self.seven_zip_spinner = Spinner(
+            text='Disabled',
+            values=('Disabled', 'AES256'),
+            size_hint_x=0.7
+        )
+        self.seven_zip_password_input = TextInput(
+            multiline=False,
+            password=True,
+            size_hint_x=0.7
+        )
+        self.custom_filename_input = TextInput(
+            multiline=False,
+            size_hint_x=0.7,
+            hint_text='Leave empty for default'
+        )
+        self.custom_path_input = TextInput(
+            multiline=False,
+            size_hint_x=0.7
+        )
+        
         if platform == 'android' and ANDROID_PERMISSIONS:
             self.request_android_permissions()
         
@@ -79,6 +120,8 @@ class SteganoApp(App):
                 print(f"Error requesting permissions: {e}")
     
     def build(self):
+        self.theme_cls.primary_palette = "Green"
+        self.theme_cls.theme_style = "Dark"
         return self._create_main_page()
     
     def _create_main_page(self):
@@ -392,10 +435,29 @@ class SteganoApp(App):
         threading.Thread(target=process, daemon=True).start()
 
     def update_revealed_data(self, data):
-        if self.text_mode.state == 'down':
-            self.message_input.text = data
-        else:
-            self.message_input.text = f"Revealed data size: {len(data)} bytes"
+        try:
+            if self.text_mode.state == 'down':
+                self.message_input.text = data
+            else:
+                # Check if the data starts with FILE: prefix
+                if data.startswith('FILE:'):
+                    # Split the data into filename and content
+                    _, filename, encoded_content = data.split(':', 2)
+                    file_content = base64.b64decode(encoded_content)
+                    
+                    # Generate unique filename
+                    base_path = os.path.join(os.path.dirname(self.carrier_file), filename)
+                    output_path = self.get_unique_filename(base_path)
+                    
+                    # Write the file
+                    with open(output_path, 'wb') as f:
+                        f.write(file_content)
+                    
+                    self.message_input.text = f"File extracted successfully: {os.path.basename(output_path)}"
+                else:
+                    self.message_input.text = "No valid file data found in image"
+        except Exception as e:
+            self.message_input.text = f"Error extracting file: {str(e)}"
 
     def set_success_message(self, message):
         self.message_input.text = message
@@ -436,40 +498,9 @@ class SteganoApp(App):
         return base_path
 
     def toggle_settings(self, instance):
-        if not hasattr(self, 'settings_popup'):
-            self.create_settings_popup()
-        
-        # Enable/disable inputs based on popup visibility
-        is_open = self.settings_popup.is_open if hasattr(self.settings_popup, 'is_open') else False
-        
-        if not is_open:
-            # Enable all inputs
-            self.encoding_spinner.disabled = False
-            self.compression_spinner.disabled = False
-            self.encryption_input.disabled = False
-            self.seven_zip_spinner.disabled = False
-            self.custom_filename_input.disabled = False
-            self.custom_path_input.disabled = False
-            
-            if self.seven_zip_spinner.text == 'AES256':
-                self.seven_zip_password_input.disabled = False
-                self.seven_zip_password_layout.height = 40
-                self.seven_zip_password_layout.opacity = 1
-            
-            self.settings_popup.open()
-            self.settings_popup.is_open = True
-        else:
-            # Disable all inputs
-            self.encoding_spinner.disabled = True
-            self.compression_spinner.disabled = True
-            self.encryption_input.disabled = True
-            self.seven_zip_spinner.disabled = True
-            self.seven_zip_password_input.disabled = True
-            self.custom_filename_input.disabled = True
-            self.custom_path_input.disabled = True
-            
-            self.settings_popup.dismiss()
-            self.settings_popup.is_open = False
+        if not hasattr(self, 'settings_popup') or self.settings_popup is None:
+            self.settings_popup = self.create_settings_popup()
+        self.settings_popup.open()
 
     def get_current_settings(self):
         settings = SteganoSettings()
@@ -562,14 +593,13 @@ class SteganoApp(App):
         return self.settings_popup
 
     def create_settings_widgets(self):
-        # Add encoding spinner
+        # Add encoding selection
         encoding_layout = BoxLayout(size_hint_y=None, height=40)
-        encoding_layout.add_widget(Label(text='Encoding:'))
+        encoding_layout.add_widget(Label(text='Text Encoding:'))
         self.encoding_spinner = Spinner(
             text='utf-8',
-            values=('utf-8', 'ascii', 'latin1'),
-            size_hint_x=0.7,
-            disabled=True
+            values=('utf-8', 'ascii', 'latin1', 'utf-16'),
+            size_hint_x=0.7
         )
         encoding_layout.add_widget(self.encoding_spinner)
         self.settings_panel.add_widget(encoding_layout)
@@ -580,8 +610,7 @@ class SteganoApp(App):
         self.compression_spinner = Spinner(
             text='None',
             values=('None', 'Fast', 'Default', 'Best'),
-            size_hint_x=0.7,
-            disabled=True
+            size_hint_x=0.7
         )
         compression_layout.add_widget(self.compression_spinner)
         self.settings_panel.add_widget(compression_layout)
@@ -591,8 +620,7 @@ class SteganoApp(App):
         encryption_layout.add_widget(Label(text='Encryption Key:'))
         self.encryption_input = TextInput(
             multiline=False,
-            size_hint_x=0.7,
-            disabled=True
+            size_hint_x=0.7
         )
         encryption_layout.add_widget(self.encryption_input)
         self.settings_panel.add_widget(encryption_layout)
@@ -603,8 +631,7 @@ class SteganoApp(App):
         self.seven_zip_spinner = Spinner(
             text='Disabled',
             values=('Disabled', 'AES256'),
-            size_hint_x=0.7,
-            disabled=True
+            size_hint_x=0.7
         )
         self.seven_zip_spinner.bind(text=self.on_seven_zip_change)
         seven_zip_layout.add_widget(self.seven_zip_spinner)
@@ -616,8 +643,7 @@ class SteganoApp(App):
         self.seven_zip_password_input = TextInput(
             multiline=False,
             password=True,
-            size_hint_x=0.7,
-            disabled=True
+            size_hint_x=0.7
         )
         self.seven_zip_password_layout.add_widget(self.seven_zip_password_input)
         self.settings_panel.add_widget(self.seven_zip_password_layout)
@@ -628,7 +654,6 @@ class SteganoApp(App):
         self.custom_filename_input = TextInput(
             multiline=False,
             size_hint_x=0.7,
-            disabled=True,
             hint_text='Leave empty for default'
         )
         filename_layout.add_widget(self.custom_filename_input)
@@ -641,13 +666,11 @@ class SteganoApp(App):
         self.custom_path_input = TextInput(
             multiline=False,
             size_hint_x=0.7,
-            disabled=True,
             hint_text='Leave empty for same folder'
         )
         path_choose_btn = HighlightButton(
             text='...',
-            size_hint_x=0.3,
-            disabled=True
+            size_hint_x=0.3
         )
         path_choose_btn.bind(on_release=self.choose_custom_path)
         
@@ -688,12 +711,14 @@ class SteganoApp(App):
         Clock.schedule_once(lambda dt: setattr(instance, 'disabled', False), 0.1)
 
     def create_analysis_button(self):
-        analysis_btn = Button(
-            text='🔍',
+        analysis_btn = MDIconButton(
+            icon="magnify",
             size_hint=(None, None),
             size=(dp(40), dp(40)),
             pos_hint={'right': 0.98, 'top': 0.98},
-            background_color=(0.2, 0.2, 0.2, 0.8),
+            theme_icon_color="Custom",
+            icon_color=(0, 0.7, 0.9, 1),  # Light blue color
+            md_bg_color=(0.2, 0.2, 0.2, 0.9),  # Dark background
             opacity=0
         )
         analysis_btn.bind(on_release=self.show_analysis)
@@ -837,3 +862,13 @@ class SteganoApp(App):
         close_btn.bind(on_release=popup.dismiss)
         content.add_widget(close_btn)
         popup.open()
+
+    def on_filetype_change(self, instance, value):
+        if value == 'JPEG':
+            # Update compression options for JPEG
+            self.compression_spinner.values = ('None', 'Optimized')
+            self.compression_spinner.text = 'None'
+        else:  # PNG
+            # Update compression options for PNG
+            self.compression_spinner.values = ('None', 'Fast', 'Default', 'Best')
+            self.compression_spinner.text = 'None'
