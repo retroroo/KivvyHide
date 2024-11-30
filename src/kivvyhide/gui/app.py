@@ -20,6 +20,8 @@ from cryptography.fernet import Fernet
 import zlib
 from kivy.uix.spinner import Spinner
 from kivy.uix.scrollview import ScrollView
+import py7zr
+import tempfile
 
 # Platform-specific imports
 ANDROID_PERMISSIONS = []
@@ -127,58 +129,34 @@ class SteganoApp(App):
         content_layout.add_widget(self.progress_bar)
         
         # Add the advanced settings at the bottom
-        settings_layout = BoxLayout(orientation='vertical', size_hint_y=None)
-        settings_layout.bind(minimum_height=settings_layout.setter('height'))
+        settings_layout = BoxLayout(
+            orientation='vertical', 
+            size_hint_y=None,
+            height=50,
+            spacing=5
+        )
 
-        # Create toggle button in its own layout (always enabled)
-        self.settings_toggle = ToggleButton(
+        # Create toggle button
+        self.settings_toggle = HighlightButton(
             text='Advanced Settings',
             size_hint_y=None,
+            size_hint_x=1,
             height=50
         )
-        self.settings_toggle.bind(state=self.toggle_settings)
+        self.settings_toggle.bind(on_release=self.toggle_settings)
         settings_layout.add_widget(self.settings_toggle)
 
-        # Settings panel with dropdowns (separate from toggle button)
+        # Settings panel (initially hidden)
         self.settings_panel = BoxLayout(
             orientation='vertical', 
             size_hint_y=None, 
             height=0,
-            opacity=0
+            opacity=0,
+            spacing=5
         )
 
-        # Add encoding spinner
-        encoding_layout = BoxLayout(size_hint_y=None, height=40)
-        encoding_layout.add_widget(Label(text='Encoding:'))
-        self.encoding_spinner = Spinner(
-            text='utf-8',
-            values=('utf-8', 'ascii', 'latin1'),
-            size_hint_x=0.7
-        )
-        encoding_layout.add_widget(self.encoding_spinner)
-        self.settings_panel.add_widget(encoding_layout)
-
-        # Add compression spinner
-        compression_layout = BoxLayout(size_hint_y=None, height=40)
-        compression_layout.add_widget(Label(text='Compression:'))
-        self.compression_spinner = Spinner(
-            text='Disabled',
-            values=('Enabled', 'Disabled'),
-            size_hint_x=0.7
-        )
-        compression_layout.add_widget(self.compression_spinner)
-        self.settings_panel.add_widget(compression_layout)
-
-        # Add encryption key input
-        encryption_layout = BoxLayout(size_hint_y=None, height=40)
-        encryption_layout.add_widget(Label(text='Encryption Key:'))
-        self.encryption_input = TextInput(
-            multiline=False,
-            size_hint_x=0.7
-        )
-        encryption_layout.add_widget(self.encryption_input)
-        self.settings_panel.add_widget(encryption_layout)
-
+        # Create and add settings widgets
+        self.create_settings_widgets()
         settings_layout.add_widget(self.settings_panel)
         content_layout.add_widget(settings_layout)
         
@@ -196,6 +174,9 @@ class SteganoApp(App):
         button_layout.add_widget(hide_btn)
         button_layout.add_widget(reveal_btn)
         root_layout.add_widget(button_layout)
+        
+        # Bind 7z spinner to show/hide password field
+        self.seven_zip_spinner.bind(text=self.on_seven_zip_change)
         
         return root_layout
     
@@ -282,17 +263,14 @@ class SteganoApp(App):
         if not self.carrier_file:
             self.set_error_message("Please select a carrier image first")
             return
-        
         if self.text_mode.state == 'down' and not self.message_input.text.strip():
             self.set_error_message("Please enter a message to hide")
             return
-        
         if self.file_mode.state == 'down' and not self.payload_file:
             self.set_error_message("Please select a file to hide")
             return
-        
+
         self.start_progress()
-        
         def process():
             try:
                 if self.text_mode.state == 'down':
@@ -303,14 +281,35 @@ class SteganoApp(App):
                         Clock.schedule_once(lambda dt, path=output_path: self.show_output_image(path))
                         Clock.schedule_once(lambda dt: self.set_success_message("Message hidden successfully!"))
                 else:
-                    with open(self.payload_file, 'rb') as f:
-                        file_content = f.read()
-                    
-                    filename = os.path.basename(self.payload_file)
-                    file_data = f"FILE:{filename}:{base64.b64encode(file_content).decode()}"
-                    
                     settings = self.get_current_settings()
+                    
+                    # Handle 7z encryption if enabled
+                    if self.seven_zip_spinner.text != 'Disabled':
+                        if not self.seven_zip_password_input.text:
+                            Clock.schedule_once(lambda dt: self.set_error_message("7z password is required"))
+                            return
+                        
+                        # Create temporary 7z file
+                        with tempfile.NamedTemporaryFile(suffix='.7z', delete=False) as temp_7z:
+                            with py7zr.SevenZipFile(temp_7z.name, 'w', password=self.seven_zip_password_input.text) as archive:
+                                archive.write(self.payload_file, os.path.basename(self.payload_file))
+                        
+                        # Read the 7z file
+                        with open(temp_7z.name, 'rb') as f:
+                            file_content = f.read()
+                        
+                        # Clean up temp file
+                        os.unlink(temp_7z.name)
+                        
+                        filename = os.path.basename(self.payload_file) + '.7z'
+                    else:
+                        with open(self.payload_file, 'rb') as f:
+                            file_content = f.read()
+                        filename = os.path.basename(self.payload_file)
+                    
+                    file_data = f"FILE:{filename}:{base64.b64encode(file_content).decode()}"
                     output_path = hide_message(self.carrier_file, file_data, settings)
+                    
                     if output_path and os.path.exists(output_path):
                         Clock.schedule_once(lambda dt, path=output_path: self.show_output_image(path))
                         Clock.schedule_once(lambda dt: self.set_success_message("File hidden successfully!"))
@@ -398,26 +397,51 @@ class SteganoApp(App):
         
         return base_path
 
-    def toggle_settings(self, instance, value):
-        if value == 'down':
-            # Show and enable settings
-            self.settings_panel.height = 160
+    def toggle_settings(self, instance):
+        is_open = self.settings_panel.height > 0
+        
+        if not is_open:
+            # Show settings panel
+            self.settings_panel.height = 200
             self.settings_panel.opacity = 1
-            # Enable only the settings widgets, not the toggle button
+            self.settings_toggle.text = 'Hide Advanced Settings'
+            self.settings_toggle.parent.height = 250  # Button height + panel height
+            
+            # Enable all settings widgets except labels
+            for layout in self.settings_panel.children:
+                for widget in layout.children:
+                    if not isinstance(widget, Label):
+                        widget.disabled = False
+                    
+            # Specifically enable all spinners and inputs
             self.encoding_spinner.disabled = False
             self.compression_spinner.disabled = False
             self.encryption_input.disabled = False
+            self.seven_zip_spinner.disabled = False
+            
+            # Only enable password input if 7z encryption is enabled
+            if self.seven_zip_spinner.text != 'Disabled':
+                self.seven_zip_password_input.disabled = False
+                self.seven_zip_password_layout.disabled = False
         else:
-            # Hide and disable settings
+            # Hide settings panel
             self.settings_panel.height = 0
             self.settings_panel.opacity = 0
-            # Disable only the settings widgets, not the toggle button
-            self.encoding_spinner.disabled = True
-            self.compression_spinner.disabled = True
-            self.encryption_input.disabled = True
+            self.settings_toggle.text = 'Advanced Settings'
+            self.settings_toggle.parent.height = 50  # Just button height
+            
+            # Disable all settings widgets except labels
+            for layout in self.settings_panel.children:
+                for widget in layout.children:
+                    if not isinstance(widget, Label):
+                        widget.disabled = True
+            
+            # Specifically disable 7z password layout and input
+            self.seven_zip_password_input.disabled = True
+            self.seven_zip_password_layout.disabled = True
         
         # Force layout update
-        self.settings_panel.parent.minimum_height = self.settings_toggle.height + self.settings_panel.height
+        self.settings_toggle.parent.size_hint_y = None
 
     def get_current_settings(self):
         settings = SteganoSettings()
@@ -426,6 +450,8 @@ class SteganoApp(App):
         if self.encryption_input.text:
             key = base64.b64encode(self.encryption_input.text.encode()[:32].ljust(32, b'\0'))
             settings.encryption_key = key
+        if self.seven_zip_spinner.text == 'Enabled':
+            settings.seven_zip_encryption = True
         return settings
 
     def toggle_mode(self, instance, value):
@@ -450,3 +476,74 @@ class SteganoApp(App):
                 self.payload_btn.opacity = 1
                 self.payload_label.height = 50
                 self.payload_btn.height = 50
+
+    def on_seven_zip_change(self, instance, value):
+        if value != 'Disabled':
+            self.seven_zip_password_layout.height = 40
+            self.seven_zip_password_layout.opacity = 1
+            self.settings_panel.height = 200  # Increase panel height
+        else:
+            self.seven_zip_password_layout.height = 0
+            self.seven_zip_password_layout.opacity = 0
+            self.settings_panel.height = 160  # Return to original height
+
+    def create_settings_widgets(self):
+        # Add encoding spinner
+        encoding_layout = BoxLayout(size_hint_y=None, height=40)
+        encoding_layout.add_widget(Label(text='Encoding:'))
+        self.encoding_spinner = Spinner(
+            text='utf-8',
+            values=('utf-8', 'ascii', 'latin1'),
+            size_hint_x=0.7,
+            disabled=True
+        )
+        encoding_layout.add_widget(self.encoding_spinner)
+        self.settings_panel.add_widget(encoding_layout)
+
+        # Add compression spinner
+        compression_layout = BoxLayout(size_hint_y=None, height=40)
+        compression_layout.add_widget(Label(text='Compression:'))
+        self.compression_spinner = Spinner(
+            text='Disabled',
+            values=('Enabled', 'Disabled'),
+            size_hint_x=0.7,
+            disabled=True
+        )
+        compression_layout.add_widget(self.compression_spinner)
+        self.settings_panel.add_widget(compression_layout)
+
+        # Add encryption key input
+        encryption_layout = BoxLayout(size_hint_y=None, height=40)
+        encryption_layout.add_widget(Label(text='Encryption Key:'))
+        self.encryption_input = TextInput(
+            multiline=False,
+            size_hint_x=0.7,
+            disabled=True
+        )
+        encryption_layout.add_widget(self.encryption_input)
+        self.settings_panel.add_widget(encryption_layout)
+
+        # Add 7z settings
+        seven_zip_layout = BoxLayout(size_hint_y=None, height=40)
+        seven_zip_layout.add_widget(Label(text='7z Encryption:'))
+        self.seven_zip_spinner = Spinner(
+            text='Disabled',
+            values=('Disabled', 'AES256'),
+            size_hint_x=0.7,
+            disabled=True
+        )
+        self.seven_zip_spinner.bind(text=self.on_seven_zip_change)
+        seven_zip_layout.add_widget(self.seven_zip_spinner)
+        self.settings_panel.add_widget(seven_zip_layout)
+
+        # Add 7z password input
+        self.seven_zip_password_layout = BoxLayout(size_hint_y=None, height=0, opacity=0)
+        self.seven_zip_password_layout.add_widget(Label(text='7z Password:'))
+        self.seven_zip_password_input = TextInput(
+            multiline=False,
+            password=True,
+            size_hint_x=0.7,
+            disabled=True
+        )
+        self.seven_zip_password_layout.add_widget(self.seven_zip_password_input)
+        self.settings_panel.add_widget(self.seven_zip_password_layout)
