@@ -424,14 +424,17 @@ class SteganoApp(App):
         if not is_open:
             # Calculate total height for all settings widgets
             base_height = 280  # Height for basic settings
-            if self.seven_zip_spinner.text != 'Disabled':
+            if self.seven_zip_spinner.text == 'AES256':
                 base_height += 40  # Add height for password field if 7z is enabled
+                self.seven_zip_password_input.disabled = False
+                self.seven_zip_password_layout.height = 40
+                self.seven_zip_password_layout.opacity = 1
             
             # Show settings panel
             self.settings_panel.height = base_height
             self.settings_panel.opacity = 1
             self.settings_toggle.text = 'Hide Advanced Settings'
-            self.settings_toggle.parent.height = base_height + 50  # Button height + panel height
+            self.settings_toggle.parent.height = base_height + 50
             
             # Enable all spinners and inputs
             self.encoding_spinner.disabled = False
@@ -518,14 +521,16 @@ class SteganoApp(App):
                 self.payload_btn.height = 50
 
     def on_seven_zip_change(self, instance, value):
-        if value != 'Disabled':
+        if value == 'AES256':
             self.seven_zip_password_layout.height = 40
             self.seven_zip_password_layout.opacity = 1
-            self.settings_panel.height = self.settings_panel.height + 40  # Add height for password field
+            self.seven_zip_password_input.disabled = False  # Enable input when AES256 is selected
+            self.settings_panel.height = self.settings_panel.height + 40
         else:
             self.seven_zip_password_layout.height = 0
             self.seven_zip_password_layout.opacity = 0
-            self.settings_panel.height = self.settings_panel.height - 40  # Reduce height when hiding password field
+            self.seven_zip_password_input.disabled = True  # Disable input when not using AES256
+            self.settings_panel.height = self.settings_panel.height - 40
 
     def create_settings_widgets(self):
         # Add encoding spinner
