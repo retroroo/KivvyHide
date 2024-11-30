@@ -31,8 +31,6 @@ icon.filename = %(source.dir)s/assets/icon.png
 
 # (list) Application requirements
 android.gradle_dependencies = org.xerial:sqlite-jdbc:3.36.0
-android.add_aars = libs/*.aar
-android.add_jars = libs/*.jar
 
 # (bool) Indicate if the application should be fullscreen or not
 fullscreen = 0
