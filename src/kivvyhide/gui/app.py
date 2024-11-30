@@ -65,25 +65,14 @@ class SteganoApp(App):
         # Create a main layout that will contain everything
         root_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
         
-        # Create settings panel and toggle button first
-        self.settings_panel = BoxLayout(
+        # Create a container for main content (everything except settings)
+        main_container = BoxLayout(
             orientation='vertical',
-            size_hint_y=None,
-            height=0,
-            opacity=0
+            spacing=10,
+            size_hint_y=0.8  # Take up 80% of vertical space
         )
         
-        self.settings_toggle = HighlightButton(
-            text='Advanced Settings',
-            size_hint_y=None,
-            height=50
-        )
-        self.settings_toggle.bind(on_release=self.toggle_settings)
-        
-        # Create all settings widgets
-        self.create_settings_widgets()
-        
-        # Create a scrollable content layout for the main interface
+        # Create scrollable content
         main_scroll = ScrollView(size_hint=(1, 1))
         main_content = BoxLayout(
             orientation='vertical', 
@@ -152,35 +141,73 @@ class SteganoApp(App):
         self.payload_btn.bind(on_release=self.choose_payload)
         main_content.add_widget(self.payload_btn)
         
-        # Progress bar
-        self.progress_bar = ProgressBar(max=100, size_hint_y=None, height=20)
-        main_content.add_widget(self.progress_bar)
-        
         main_scroll.add_widget(main_content)
         
-        # Create buttons layout
-        button_layout = BoxLayout(size_hint_y=None, height=50)
+        # Add main content to main container
+        main_container.add_widget(main_scroll)
+        
+        # Create buttons and progress layout
+        button_and_progress = BoxLayout(
+            orientation='vertical',
+            size_hint_y=None,
+            height=90,  # Fixed height for buttons and progress
+            spacing=10
+        )
+        
+        # Progress bar
+        progress_layout = BoxLayout(size_hint_y=None, height=30)
+        self.progress_bar = ProgressBar(max=100, value=0)
+        progress_layout.add_widget(self.progress_bar)
+        
+        # Buttons layout
+        button_layout = BoxLayout(
+            size_hint_y=None, 
+            height=50,
+            spacing=10
+        )
         hide_btn = HighlightButton(text='Hide Data')
         hide_btn.bind(on_release=self.hide_data)
-        reveal_btn = HighlightButton(text='Reveal Data')
-        reveal_btn.bind(on_release=self.reveal_data)
+        self.reveal_btn = HighlightButton(text='Reveal Data')
+        self.reveal_btn.bind(on_release=self.reveal_data)
         button_layout.add_widget(hide_btn)
-        button_layout.add_widget(reveal_btn)
+        button_layout.add_widget(self.reveal_btn)
         
-        # Create a separate layout for settings that stays at bottom
+        # Add progress and buttons to their container
+        button_and_progress.add_widget(progress_layout)
+        button_and_progress.add_widget(button_layout)
+        
+        # Create settings container with fixed size
         settings_container = BoxLayout(
             orientation='vertical',
+            size_hint_y=0.2,  # Take up 20% of vertical space
+            minimum_height=50
+        )
+        
+        # Create settings toggle and panel
+        self.settings_toggle = HighlightButton(
+            text='Advanced Settings',
             size_hint_y=None,
             height=50
         )
+        self.settings_toggle.bind(on_release=self.toggle_settings)
         
-        # Add settings toggle and panel to settings container
+        self.settings_panel = BoxLayout(
+            orientation='vertical',
+            size_hint_y=None,
+            height=0,
+            opacity=0
+        )
+        
+        # Create settings widgets
+        self.create_settings_widgets()
+        
+        # Add everything to their respective containers
         settings_container.add_widget(self.settings_toggle)
         settings_container.add_widget(self.settings_panel)
         
-        # Add everything to root layout
-        root_layout.add_widget(main_scroll)
-        root_layout.add_widget(button_layout)  # Add buttons before settings
+        # Add all containers to root layout
+        root_layout.add_widget(main_container)
+        root_layout.add_widget(button_and_progress)
         root_layout.add_widget(settings_container)
         
         return root_layout
@@ -340,10 +367,9 @@ class SteganoApp(App):
             self.set_error_message("Please select a carrier image first")
             return
         
-        # Disable buttons
+        # Disable UI during processing
         instance.disabled = True
         self.carrier_btn.disabled = True
-        self.payload_btn.disabled = True
         
         self.start_progress()
         
@@ -352,33 +378,22 @@ class SteganoApp(App):
                 settings = self.get_current_settings()
                 revealed_data = reveal_message(self.carrier_file, settings)
                 
-                if not revealed_data:
-                    Clock.schedule_once(lambda dt: self.set_error_message("No hidden data found in image"))
-                    return
-                    
-                if revealed_data.startswith("FILE:"):
-                    try:
-                        _, filename, content = revealed_data.split(":", 2)
-                        base_save_path = os.path.join(os.path.dirname(self.carrier_file), f"revealed_{filename}")
-                        save_path = self.get_unique_filename(base_save_path)
-                        
-                        with open(save_path, 'wb') as f:
-                            f.write(base64.b64decode(content))
-                        
-                        Clock.schedule_once(lambda dt, msg=f"File revealed and saved as: {save_path}": self.set_success_message(msg))
-                    except Exception as error:
-                        Clock.schedule_once(lambda dt, err=f"Error extracting file: {str(error)}": self.set_error_message(err))
-                else:
-                    Clock.schedule_once(lambda dt, msg=f"Revealed message: {revealed_data}": self.set_success_message(msg))
-                    
+                # Update UI on main thread
+                Clock.schedule_once(lambda dt: self.update_revealed_data(revealed_data))
             except Exception as error:
-                Clock.schedule_once(lambda dt, err=str(error): self.set_error_message(err))
+                Clock.schedule_once(lambda dt: self.set_error_message(str(error)))
             finally:
-                Clock.schedule_once(lambda dt: self.complete_progress(), 1)
-                # Re-enable buttons
+                # Re-enable UI on main thread
                 Clock.schedule_once(lambda dt: self.enable_buttons(instance))
+                Clock.schedule_once(lambda dt: self.complete_progress())
         
-        threading.Thread(target=process).start()
+        threading.Thread(target=process, daemon=True).start()
+
+    def update_revealed_data(self, data):
+        if self.text_mode.state == 'down':
+            self.message_input.text = data
+        else:
+            self.message_input.text = f"Revealed data size: {len(data)} bytes"
 
     def set_success_message(self, message):
         self.message_input.text = message
@@ -487,7 +502,7 @@ class SteganoApp(App):
     def get_current_settings(self):
         settings = SteganoSettings()
         settings.encoding = self.encoding_spinner.text
-        settings.compression = self.compression_spinner.text == 'Enabled'
+        settings.compression = self.compression_spinner.text
         if self.encryption_input.text:
             key = base64.b64encode(self.encryption_input.text.encode()[:32].ljust(32, b'\0'))
             settings.encryption_key = key
@@ -549,8 +564,8 @@ class SteganoApp(App):
         compression_layout = BoxLayout(size_hint_y=None, height=40)
         compression_layout.add_widget(Label(text='Compression:'))
         self.compression_spinner = Spinner(
-            text='Disabled',
-            values=('Enabled', 'Disabled'),
+            text='None',
+            values=('None', 'Fast', 'Default', 'Best'),
             size_hint_x=0.7,
             disabled=True
         )
@@ -651,3 +666,9 @@ class SteganoApp(App):
     def handle_path_selection(self, selection):
         if selection and len(selection) > 0:
             self.custom_path_input.text = selection[0]
+
+    def on_reveal_press(self, instance):
+        # Immediately disable to prevent double clicks
+        instance.disabled = True
+        # Re-enable after a short delay
+        Clock.schedule_once(lambda dt: setattr(instance, 'disabled', False), 0.1)
