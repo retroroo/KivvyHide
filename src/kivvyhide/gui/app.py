@@ -419,10 +419,11 @@ class SteganoApp(App):
             self.encryption_input.disabled = False
             self.seven_zip_spinner.disabled = False
             
-            # Only enable password input if 7z encryption is enabled
+            # Enable password input if 7z encryption is not disabled
             if self.seven_zip_spinner.text != 'Disabled':
+                self.seven_zip_password_layout.height = 40
+                self.seven_zip_password_layout.opacity = 1
                 self.seven_zip_password_input.disabled = False
-                self.seven_zip_password_layout.disabled = False
         else:
             # Hide settings panel
             self.settings_panel.height = 0
@@ -436,7 +437,8 @@ class SteganoApp(App):
                     if not isinstance(widget, Label):
                         widget.disabled = True
             
-            # Specifically disable 7z password layout and input
+            # Specifically disable 7z related widgets
+            self.seven_zip_spinner.disabled = True
             self.seven_zip_password_input.disabled = True
             self.seven_zip_password_layout.disabled = True
         
