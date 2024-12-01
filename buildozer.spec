@@ -30,7 +30,7 @@ presplash.filename = %(source.dir)s/assets/presplash.png
 icon.filename = %(source.dir)s/assets/icon.png
 
 # (list) Application requirements
-android.gradle_dependencies = org.xerial:sqlite-jdbc:3.36.0
+android.gradle_dependencies = org.xerial:sqlite-jdbc:3.36.0,com.android.tools.build:gradle:8.3.0
 
 # (bool) Indicate if the application should be fullscreen or not
 fullscreen = 0
@@ -39,7 +39,7 @@ fullscreen = 0
 android.presplash_color = #000000
 
 # (bool) If True, then skip trying to update the Android sdk
-android.skip_update = False
+android.skip_update = True
 
 # Python for Android specific
 p4a.branch = develop
@@ -50,4 +50,5 @@ p4a.bootstrap = sdl2
 p4a.python_package = python3
 
 # Add specific URLs for downloading
-android.gradle_url = https://services.gradle.org/distributions/gradle-7.3-bin.zip
+android.gradle_url = https://services.gradle.org/distributions/gradle-8.3-bin.zip
+android.gradle_version = 8.3
