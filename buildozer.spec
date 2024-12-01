@@ -30,7 +30,7 @@ presplash.filename = %(source.dir)s/assets/presplash.png
 icon.filename = %(source.dir)s/assets/icon.png
 
 # (list) Application requirements
-android.gradle_dependencies = org.xerial:sqlite-jdbc:3.36.0
+android.gradle_dependencies = org.xerial:sqlite-jdbc:3.36.0,androidx.core:core:1.6.0,androidx.appcompat:appcompat:1.3.1
 android.enable_androidx = True
 
 # (bool) Indicate if the application should be fullscreen or not
@@ -54,6 +54,4 @@ p4a.python_package = python3
 android.gradle_url = https://services.gradle.org/distributions/gradle-7.6.1-bin.zip
 android.gradle_version = 7.6.1
 android.build_tools_version = 33.0.0
-android.android_api = 33
-android.minapi = 21
 android.androidx_version = 1.0.0
